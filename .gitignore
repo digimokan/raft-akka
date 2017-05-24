@@ -1,2 +1,12 @@
+# SCALA/SBT
+target/
+project/target/
 *.class
 *.log
+
+
+# VIM
+*.swp
+*.swo
+*~
+*.viminfo
