@@ -1,9 +1,22 @@
 package raft
 
+import com.typesafe.config.ConfigFactory
 import akka.actor.{ActorSystem, Props, PoisonPill}
 import akka.routing.{RandomGroup, AddRoutee, RemoveRoutee, ActorRefRoutee, Broadcast}
 
 object RaftApp extends App {
+
+  // load constants from config file
+  val electionTimeoutBase = ConfigFactory.load.getInt("election-timeout-base")
+
+  /****************************************************************************
+   * INITIALIZATION
+   ****************************************************************************/
+
+  println("\n****************************************************************************")
+  println("INITIALIZING")
+  println("****************************************************************************\n")
+
   // create local actor system
   val system = ActorSystem("RaftApp")
 
@@ -24,6 +37,25 @@ object RaftApp extends App {
 
   // broadcast each server id to group (introduces servers to each other)
   serverIDs.foreach( id => raftGroup ! Broadcast(id) )
+  Thread.sleep(200)
+
+  /****************************************************************************
+  * RUN ELECTIONS
+  ****************************************************************************/
+
+  println("\n****************************************************************************")
+  println("RUNNING ELECTIONS")
+  println("****************************************************************************\n")
+
+  // now that initialization is done, start each server (i.e. election timers)
+  raftGroup ! Broadcast(Run)
+
+  // let all elections timeout
+  Thread.sleep(electionTimeoutBase * 3)
+
+  /****************************************************************************
+   * CLEANUP
+   ****************************************************************************/
 
   // stop all raft servers then group router, then stop guardian actors
   raftGroup ! Broadcast(PoisonPill)
