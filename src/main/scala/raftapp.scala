@@ -37,8 +37,10 @@ object RaftApp extends App {
     name = "raftGroup"
   )
 
-  // broadcast each server id to group (introduces servers to each other)
-  serverIDs.foreach( id => raftGroup ! Broadcast(id) )
+  // send the list of servers to each server (introduces servers to each other)
+  serverIDs.map(_.ref).foreach( ref => ref ! AddPeers(serverIDs) )
+
+  // pause so that printf output is distinct
   Thread.sleep(200)
 
   /****************************************************************************
