@@ -29,15 +29,13 @@ class RaftServer (newName:String) extends Actor with Stash {
   var electionTimer:Cancellable = null // this server's election timer
 
   /*****************************************************************************
-  * SERVER LOGICS: ATOMIC FUNCTIONAL UNITS THAT WILL BE COMBINED INTO A BEHAVIOR
+  * SERVER LOGICS: ATOMIC FUNCTIONAL UNITS THAT WILL BE COMBINED INTO A STATE
   *****************************************************************************/
 
   // add a server to this server's list of known peers
   def addPeer (id:ServerID) : Unit = {
-    if (id.name != ownName) {
+    if (id.name != ownName)
       serverIDs += id
-      printf(f"${ownName}: added ${id.name} to its known peers\n")
-    }
   }
 
   // add many servers to this server's list of known peers
@@ -45,31 +43,32 @@ class RaftServer (newName:String) extends Actor with Stash {
     peers.foreach( id => addPeer(id) )
   }
 
-  def run () : Unit = {
+  // reset this server's election timer to base + variance
+  def resetElectionTimer () : Unit = {
     val timerValue = electionTimeoutBase + rand.nextInt(electionTimeoutVariance)
     electionTimer = context.system.scheduler.scheduleOnce(timerValue milliseconds, self, ElectionTimeout)
     printf(f"${ownName}: set election timer ${timerValue.toDouble / 1000} sec\n")
   }
 
   /*****************************************************************************
-  * SERVER BEHAVIORS (i.e receive METHODS): SERVER CAN COMBINE MANY BEHAVIORS
+  * SERVER STATES (i.e receive METHODS): SERVER WILL BE IN ONE OF THESE STATES
   *****************************************************************************/
 
-  // initial server behavior: uninitialized (i.e. not yet have peer list)
+  // INITIAL: uninitialized (i.e. not yet have peer list)
   def receive = {
-    // init msg: add peers, then become basicServer & handle stashed msgs
-    case AddPeers(peers) =>
+    // init msg: add peers, start elec timer, become follower (& handle stashed)
+    case InitWithPeers(peers) =>
       addPeers(peers)
+      resetElectionTimer()
       unstashAll()
-      become(basicServer)
-    // some other msg: stash the msg and handle it afer server is initialized
+      become(follower)
+    // some other msg: stash the msg and handle it afer server init to follower
     case _ =>
       stash()
   }
 
-  def basicServer : Receive = {
-    // initialization complete: start election timer
-    case Run => run()
+  // FOLLOWER: respond to VoteReq and AppendEntries from candidates and leaders
+  def follower : Receive = {
     // this server's election timer expired: become candidate and start election
     case ElectionTimeout => printf(f"${ownName}: becoming candidate\n")
   }

@@ -38,7 +38,7 @@ object RaftApp extends App {
   )
 
   // send the list of servers to each server (introduces servers to each other)
-  serverIDs.map(_.ref).foreach( ref => ref ! AddPeers(serverIDs) )
+  serverIDs.map(_.ref).foreach( ref => ref ! InitWithPeers(serverIDs) )
 
   // pause so that printf output is distinct
   Thread.sleep(200)
@@ -50,9 +50,6 @@ object RaftApp extends App {
   println("\n****************************************************************************")
   println("RUNNING ELECTIONS")
   println("****************************************************************************\n")
-
-  // now that initialization is done, start each server (i.e. election timers)
-  raftGroup ! Broadcast(Run)
 
   // let all elections timeout
   Thread.sleep(electionTimeoutBase * 3)
