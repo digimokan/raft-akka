@@ -24,25 +24,27 @@ class RaftServer (newName:String) extends Actor {
   // volatile state: these vars will be re-initialized on server crash & restart
   var electionTimer:Cancellable = null // this server's election timer
 
+  // add a server to this server's list of known peers
+  def addPeer (id:ServerID) : Unit = {
+    if (id.name != ownName) {
+      serverIDs += id
+      printf(f"${ownName}: added ${id.name} to its known peers\n")
+    }
+  }
+
+  def run () : Unit = {
+    val timerValue = electionTimeoutBase + rand.nextInt(electionTimeoutVariance)
+    electionTimer = context.system.scheduler.scheduleOnce(timerValue milliseconds, self, ElectionTimeout)
+    printf(f"${ownName}: set election timer ${timerValue.toDouble / 1000} sec\n")
+  }
+
   def receive () = {
-
     // initialization msg: this server introduced to ServerID(name, ref)
-    case ServerID(name, ref) =>
-      if (name != ownName) {
-        serverIDs += ServerID(name, ref)
-        printf(f"${ownName}: added ${name} to its known peers\n")
-      }
-
+    case ServerID(name, ref) => addPeer(ServerID(name, ref))
     // initialization complete: start election timer
-    case Run =>
-      val timerValue = electionTimeoutBase + rand.nextInt(electionTimeoutVariance)
-      electionTimer = context.system.scheduler.scheduleOnce(timerValue milliseconds, self, ElectionTimeout)
-      printf(f"${ownName}: set election timer ${timerValue.toDouble / 1000} sec\n")
-
+    case Run => run()
     // this server's election timer expired: become candidate and start election
-    case ElectionTimeout =>
-      printf(f"${ownName}: becoming candidate\n")
-
+    case ElectionTimeout => printf(f"${ownName}: becoming candidate\n")
   } // receive ()
 
 }
