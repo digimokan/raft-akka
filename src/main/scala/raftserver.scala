@@ -5,9 +5,9 @@ import scala.util.Random
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.collection.mutable.Set
-import akka.actor.{Actor, ActorRef, Cancellable}
+import akka.actor.{Actor, ActorRef, Cancellable, Stash}
 
-class RaftServer (newName:String) extends Actor {
+class RaftServer (newName:String) extends Actor with Stash {
   /*****************************************************************************
   * SERVER STATE (FIELDS)
   *****************************************************************************/
@@ -17,7 +17,7 @@ class RaftServer (newName:String) extends Actor {
   val electionTimeoutVariance = ConfigFactory.load.getInt("election-timeout-variance")
   val heartbeatTimeout = ConfigFactory.load.getInt("heartbeat-timeout")
   var rand = Random                    // generate random timeouts
-  import context.dispatcher            // for scheduleOnce
+  import context._                     // for scheduleOnce, become
 
   // persistent state: these vars will survive server crash & restart
   val ownName = newName                // this server's assigned name
@@ -55,14 +55,24 @@ class RaftServer (newName:String) extends Actor {
   * SERVER BEHAVIORS (i.e receive METHODS): SERVER CAN COMBINE MANY BEHAVIORS
   *****************************************************************************/
 
-  def receive () = {
-    // initialization msg: this server introduced to ServerID(name, ref)
-    case AddPeers(peers) => addPeers(peers)
+  // initial server behavior: uninitialized (i.e. not yet have peer list)
+  def receive = {
+    // init msg: add peers, then become basicServer & handle stashed msgs
+    case AddPeers(peers) =>
+      addPeers(peers)
+      unstashAll()
+      become(basicServer)
+    // some other msg: stash the msg and handle it afer server is initialized
+    case _ =>
+      stash()
+  }
+
+  def basicServer : Receive = {
     // initialization complete: start election timer
     case Run => run()
     // this server's election timer expired: become candidate and start election
     case ElectionTimeout => printf(f"${ownName}: becoming candidate\n")
-  } // receive ()
+  }
 
 }
 
