@@ -15,3 +15,8 @@ final case class AppendEntriesReply (id:ServerID, success:Boolean, term:Int) ext
 final case object ElectionTimeout extends RaftAPI
 final case object HeartbeatTimeout extends RaftAPI
 
+sealed trait RaftTestAPI
+
+final case object CreateServers extends RaftTestAPI
+final case object Shutdown extends RaftTestAPI
+
