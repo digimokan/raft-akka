@@ -75,12 +75,12 @@ class RaftServer (newName:String) extends Actor with Stash {
 
   // start from down/crashed state as follower in term 0
   def start () : Unit = {
-    changeToFollowerState(0)
-    printf(f"${ownName}: started from crashed state\n")
+    val elecTimer = changeToFollowerState(0)
+    printf(f"${ownName} [T${ownTerm}]: started from crashed state as follower, ET ${elecTimer}\n")
   }
 
   // reset our election timer to base + optional variance
-  def resetElectionTimer (useVariance:Boolean) : Unit = {
+  def resetElectionTimer (useVariance:Boolean) : Double = {
     // set timer to its max possible value, or set to a base + some randomness
     val variance =
       if (useVariance)
@@ -92,8 +92,7 @@ class RaftServer (newName:String) extends Actor with Stash {
     if (electionTimer != null)
       electionTimer.cancel()
     electionTimer = context.system.scheduler.scheduleOnce(timerValue milliseconds, self, ElectionTimeout)
-    // print control info for testing purposes
-    printf(f"${ownName}: set election timer ${timerValue.toDouble / 1000} sec\n")
+    return (timerValue.toDouble / 1000)
   }
 
   // follower OR candidate determines whether to vote for a candidate
@@ -125,7 +124,7 @@ class RaftServer (newName:String) extends Actor with Stash {
     // send the yes/no reply back to candidate
     voteReq.id.ref ! VoteReply( Vote(ServerID(ownName, self), dec), ownTerm )
     // print control info for testing purposes
-    printf(f"${ownName}: sent vote to id / decision / term ${voteReq.id.name} / ${dec} / ${ownTerm}\n")
+    printf(f"${ownName} [T${ownTerm}]: handled vote req from ${voteReq.id.name}/T${voteReq.term}, replied ${dec}\n")
   }
 
   // follower/candidate/leader received AppendEntriesReq from leader
@@ -147,27 +146,26 @@ class RaftServer (newName:String) extends Actor with Stash {
     // send the true/false reply back to leader server
     leaderId.ref ! AppendEntriesReply( ServerID(ownName, self), success, ownTerm )
     // print control info for testing purposes
-    printf(f"${ownName}: received appendReq from id / term ${leaderId.name} / ${leaderTerm}\n")
+    printf(f"${ownName} [T${ownTerm}]: received appendReq from ${leaderId.name}/T${leaderTerm}\n")
   }
 
   /*****************************************************************************
   * FOLLOWER LOGICS: ATOMIC UNITS COMBINED INTO FOLLOWER STATE
   *****************************************************************************/
 
-  def changeToFollowerState (newTerm:Int) : Unit = {
+  def changeToFollowerState (newTerm:Int) : Double = {
     // set our current term
     ownTerm = newTerm
     // reset who we voted for this term
     votedFor = None
     // reset election timer, with variance
-    resetElectionTimer(true)
+    val elecTimer = resetElectionTimer(true)
     // cancel the heartbeatTimer: follower does not need one
     if (heartbeatTimer != null)
       heartbeatTimer.cancel()
     // change message processing "receive" behavior
     become(follower)
-    // print control info for testing purposes
-    printf(f"${ownName}: becoming follower, term ${ownTerm}\n")
+    return elecTimer
   }
 
   /*****************************************************************************
@@ -184,7 +182,7 @@ class RaftServer (newName:String) extends Actor with Stash {
     // change message processing "receive" behavior
     become(candidate)
     // print control info for testing purposes
-    printf(f"${ownName}: becoming candidate, term ${ownTerm}\n")
+    printf(f"${ownName} [T${ownTerm}]: ET expired, becoming candidate\n")
   }
 
   // start an election (attempt to become leader)
@@ -208,7 +206,11 @@ class RaftServer (newName:String) extends Actor with Stash {
     } else {
       tallyVote(vote)
     }
-    printf(f"${ownName}: received voteReply from id / decision / term ${vote.id.name} / ${vote.decision} / ${term}\n")
+    if (heartbeatTimer == null) {
+      printf(f"${ownName} [T${ownTerm}]: received voteReply from ${vote.id.name}/T${term}, ${vote.decision}\n")
+    } else {
+      printf(f"${ownName} [T${ownTerm}]: received voteReply from ${vote.id.name}/T${term}, ${vote.decision}, achieved majority ${votesCollected.size} & becoming leader\n")
+    }
   }
 
   // candidate tallies received vote and determines possible election results
@@ -218,10 +220,8 @@ class RaftServer (newName:String) extends Actor with Stash {
     // tally the total number of "yes" votes received
     val yesVotes = votesCollected.count(_.decision == true)
     // if total num yes votes is now majority, change to leader state
-    if (yesVotes > peers.size)
+    if (yesVotes > (peers.size / 2))
       changeToLeaderState()
-    // print control info for testing purposes
-    printf(f"${ownName}: tallied votes from ${votesCollected.map(_.id.name).mkString(" ")}\n")
   }
 
   /*****************************************************************************
@@ -238,8 +238,6 @@ class RaftServer (newName:String) extends Actor with Stash {
     heartbeatTimer = context.system.scheduler.schedule(0 milliseconds, heartbeatTimeout milliseconds, self, HeartbeatTimeout)
     // change message processing "receive" behavior
     become(leader)
-    // print control info for testing purposes
-    printf(f"${ownName}: becoming leader, term ${ownTerm}\n")
   }
 
   // leader received AppendEntriesReply from follower/candidate/leader
@@ -249,7 +247,7 @@ class RaftServer (newName:String) extends Actor with Stash {
       changeToFollowerState(term)
     }
     // print control info for testing purposes
-    printf(f"${ownName}: received appendReply from id / term ${id.name} / ${term}\n")
+    printf(f"${ownName} [T${ownTerm}]: received appendReply from ${id.name}/T${term}\n")
   }
 
   // leader heartbeatTimeout received: send heartbeats to maintain leadership
@@ -257,7 +255,7 @@ class RaftServer (newName:String) extends Actor with Stash {
     // send heatbeat msg (empty AppendEntriesReq) to each peer
     peers.foreach( id => id.ref ! AppendEntriesReq(ServerID(ownName, self), ownTerm) )
     // print control info for testing purposes
-    printf(f"${ownName}: broadcasting heartbeats (term) ${ownTerm}\n")
+    printf(f"${ownName} [T${ownTerm}]: HT expired, broadcasting heartbeats\n")
   }
 
   /*****************************************************************************
