@@ -12,11 +12,12 @@ final case class VoteReq (id:ServerID, term:Int) extends RaftAPI
 final case class VoteReply (vote:Vote, term:Int) extends RaftAPI
 final case class AppendEntriesReq (leaderId:ServerID, leaderTerm:Int) extends RaftAPI
 final case class AppendEntriesReply (id:ServerID, success:Boolean, term:Int) extends RaftAPI
+final case object Start extends RaftAPI
 final case object ElectionTimeout extends RaftAPI
 final case object HeartbeatTimeout extends RaftAPI
 
 sealed trait RaftTestAPI
 
-final case object CreateServers extends RaftTestAPI
 final case object Shutdown extends RaftTestAPI
+final case object StartAll extends RaftTestAPI
 

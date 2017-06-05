@@ -32,17 +32,19 @@ class RaftServer (newName:String) extends Actor with Stash {
   var votesCollected = Set[Vote]()      // servers that voted for us
 
   /*****************************************************************************
-  * INITIAL LOGICS: ATOMIC UNITS COMBINED INTO INITIAL STATE
+  * INITIAL LOGICS: ATOMIC UNITS COMBINED INTO UNINITIALIZED STATE
   *****************************************************************************/
 
-  // initialize this server with list of known peers, then become follower
+  // initialize this server with list of known peers
   def initialize (peerList:List[ServerID]) : Unit = {
     // add list of peers to our set of peers
     addPeers(peerList)
     // place saved msgs received prior to this init back in the msg queue
     unstashAll()
-    // become follower (and process the saved msgs) for the first term (term 0)
-    changeToFollowerState(0)
+    // become initialized (and process the saved msgs)
+    changeToInitializedState()
+    // print control info for testing purposes
+    printf(f"${ownName}: initialized with peers\n")
   }
 
   // add a server to our list of known peers
@@ -57,8 +59,25 @@ class RaftServer (newName:String) extends Actor with Stash {
   }
 
   /*****************************************************************************
+  * INITIALIZED LOGICS: ATOMIC UNITS COMBINED INTO INITIALIZED STATE
+  *****************************************************************************/
+
+  // server has been initialized with set of peers: now wait to start
+  def changeToInitializedState () : Unit = {
+    // place saved msgs received prior to this init back in the msg queue
+    unstashAll()
+    become(initialized)
+  }
+
+  /*****************************************************************************
   * COMMON LOGICS: ATOMIC UNITS COMBINED INTO FOLLOWER/CANDIDATE/LEADER STATE
   *****************************************************************************/
+
+  // start from down/crashed state as follower in term 0
+  def start () : Unit = {
+    changeToFollowerState(0)
+    printf(f"${ownName}: started from crashed state\n")
+  }
 
   // reset our election timer to base + optional variance
   def resetElectionTimer (useVariance:Boolean) : Unit = {
@@ -247,9 +266,17 @@ class RaftServer (newName:String) extends Actor with Stash {
 
   // INITIAL: uninitialized (i.e. waiting to receive peer list)
   def receive = {
-    // init msg: add peers, start elec timer, become follower (& handle stashed)
+    // init msg: add peers
     case InitWithPeers(peerList) => initialize(peerList)
-    // some other msg: stash the msg and handle it afer server init to follower
+    // some other msg: stash the msg and handle it afer server inititialized
+    case _ => stash()
+  }
+
+  // INITIALIZED: have list of peers, waiting to start (as follower)
+  def initialized : Receive = {
+    // start from down/crashed state as follower in term 0
+    case Start => start()
+    // some other msg: stash the msg and handle it afer server started
     case _ => stash()
   }
 

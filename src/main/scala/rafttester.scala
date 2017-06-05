@@ -2,7 +2,7 @@ package raft
 
 import com.typesafe.config.ConfigFactory
 import akka.serialization.Serialization.serializedActorPath
-import akka.actor.{Actor, Props, PoisonPill}
+import akka.actor.{Actor, Props, Stash, PoisonPill}
 import akka.routing.{RandomGroup, AddRoutee, RemoveRoutee, ActorRefRoutee, Broadcast}
 
 class RaftTester () extends Actor {
@@ -33,22 +33,26 @@ class RaftTester () extends Actor {
   // send the list of servers to each server (introduces servers to each other)
   serverIDs.map(_.ref).foreach( ref => ref ! InitWithPeers(serverIDs) )
 
-  // pause so that printf output is distinct
-  Thread.sleep(200)
-
-  println("\n****************************************************************************")
-  println("RUNNING ELECTIONS")
-  println("****************************************************************************\n")
-
-  // let all elections timeout
-  Thread.sleep(electionTimeoutBase * 3)
-
   def shutdown () : Unit = {
     raftGroup ! Broadcast(PoisonPill)
+
+    println("\n****************************************************************************")
+    println("SHUTTING DOWN ALL SERVERS, TERMINATING RAFT TEST")
+    println("****************************************************************************\n")
+
     context.stop(self)
   }
 
+  def startAll () : Unit = {
+    println("\n****************************************************************************")
+    println("STARTING ALL SERVERS: OBSERVE AN ELECTION AND LEADER HEARTBEATS")
+    println("****************************************************************************\n")
+
+    raftGroup ! Broadcast(Start)
+  }
+
   def receive = {
+    case StartAll => startAll()
     case Shutdown => shutdown()
   }
 
