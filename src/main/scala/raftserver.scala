@@ -38,22 +38,30 @@ class RaftServer (newName:String) extends Actor with Stash {
   // report back all state changes and behavior to tester/parent
   val tester = parent
 
-  // tell tester that we initialized with peers
+  // tell tester we initialized with peers
   def sendInitMsg () : Unit = {
     tester ! InitMsg
   }
 
-  // tell tester that we started up and became follower with term 0
+  // tell tester we started up and became follower with term 0
   def sendStartupMsg (term:Int, elecTimer:Double) : Unit = {
     tester ! StartupMsg(term, elecTimer)
   }
 
   // send vote reply back to candidate
-  // tell tester that we sent a vote reply back to a candidate
+  // tell tester we sent a vote reply back to a candidate
   def sendVoteReplyMsg (decision:Boolean, candRef:ActorRef, candTerm:Int) : Unit = {
     candRef ! VoteReply( Vote(ServerID(ownName, self), decision), ownTerm )
     tester ! VoteReplyMsg(ownTerm, decision, candRef, candTerm)
   }
+
+  // send AppendEntries reply back to leader
+  // tell tester we sent an AppendEntries reply back to leader
+  def sendAppendEntriesReplyMsg(success:Boolean, leaderRef:ActorRef, leaderTerm:Int) : Unit = {
+    leaderRef ! AppendEntriesReply( ServerID(ownName, self), success, ownTerm )
+    tester ! AppendEntriesReplyMsg(ownTerm, success, leaderRef, leaderTerm)
+  }
+
   /*****************************************************************************
   * INITIAL LOGICS: ATOMIC UNITS COMBINED INTO UNINITIALIZED STATE
   *****************************************************************************/
@@ -153,7 +161,10 @@ class RaftServer (newName:String) extends Actor with Stash {
 
   // follower/candidate/leader received AppendEntriesReq from leader
   def processAppendEntriesReq (leaderId:ServerID, leaderTerm:Int) : Unit = {
+
+    // placeholder for log checks
     var success:Boolean = false
+
     // leaderTerm < ownTerm: ignore req, reply false (req lead becomes follow)
     if (leaderTerm < ownTerm) {
       success = false
@@ -167,10 +178,10 @@ class RaftServer (newName:String) extends Actor with Stash {
       changeToFollowerState(leaderTerm)
       success = true
     }
-    // send the true/false reply back to leader server
-    leaderId.ref ! AppendEntriesReply( ServerID(ownName, self), success, ownTerm )
-    // print control info for testing purposes
-    printf(f"${ownName} [T${ownTerm}]: received appendReq from ${leaderId.name}/T${leaderTerm}\n")
+
+    // send AppendEntriesReply back to leader, send control msg to tester
+    sendAppendEntriesReplyMsg(success, leaderId.ref, leaderTerm)
+
   }
 
   /*****************************************************************************

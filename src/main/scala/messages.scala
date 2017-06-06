@@ -19,6 +19,7 @@ final case object HeartbeatTimeout extends RaftAPI
 final case object InitMsg extends RaftAPI
 final case class StartupMsg (term:Int, elecTimer:Double) extends RaftAPI
 final case class VoteReplyMsg (term:Int, decision:Boolean, candRef:ActorRef, candTerm:Int) extends RaftAPI
+final case class AppendEntriesReplyMsg (term:Int, success:Boolean, leaderRef:ActorRef, leaderTerm:Int) extends RaftAPI
 
 sealed trait RaftTestAPI
 

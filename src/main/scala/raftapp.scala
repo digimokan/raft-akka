@@ -17,7 +17,7 @@ object RaftApp extends App {
 
   // start all the servers and observe an election and leader heartbeats
   raftTester ! StartAll
-  Thread.sleep(electionTimeoutBase * 3)
+  Thread.sleep(electionTimeoutBase * 2)
 
   // shutdown the raft servers, stop all actors
   raftTester ! Shutdown
