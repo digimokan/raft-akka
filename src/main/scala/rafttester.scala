@@ -66,14 +66,11 @@ class RaftTester () extends Actor {
     case StartupMsg(term, elecTimer) =>
       printf(f"${getName(sender)} [T${term}]: started from crashed state as follower, ET ${elecTimer}\n")
 
-    case VoteReplyMsg (voterTerm, voterDecision, candRef, candTerm) =>
-      printf(f"${getName(sender)} [T${voterTerm}]: handled vote req from ${getName(candRef)}/T${candTerm}, replied ${voterDecision}\n")
-
-    case AppendEntriesReplyMsg (term, success, leaderRef, leaderTerm) =>
-      printf(f"${getName(sender)} [T${term}]: received appendReq from ${getName(leaderRef)}/T${leaderTerm}\n")
-
     case CandidateMsg(candTerm) =>
       printf(f"${getName(sender)} [T${candTerm}]: ET expired, becoming candidate\n")
+
+    case VoteReplyMsg (voterTerm, voterDecision, candRef, candTerm) =>
+      printf(f"${getName(sender)} [T${voterTerm}]: handled vote req from ${getName(candRef)}/T${candTerm}, replied ${voterDecision}\n")
 
     case VoteReceiptMsg(candTerm, wonElection, becameFollower, yesVotes, voterRef, voterTerm, voterDecision) =>
       if (becameFollower) {
@@ -83,6 +80,12 @@ class RaftTester () extends Actor {
       } else { // received vote, haven't won yet so continuing election
         printf(f"${getName(sender)} [T${candTerm}]: received voteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), have ${yesVotes} yes votes\n")
       }
+
+    case AppendEntriesReplyMsg (term, success, leaderRef, leaderTerm) =>
+      printf(f"${getName(sender)} [T${term}]: received appendReq from ${getName(leaderRef)}/T${leaderTerm}\n")
+
+    case AppendEntriesReceiptMsg (leaderTerm, becameFollower, appenderRef, appenderTerm) =>
+      printf(f"${getName(sender)} [T${leaderTerm}]: received appendReply from ${getName(appenderRef)}/T${appenderTerm}\n")
 
   }
 

@@ -48,6 +48,11 @@ class RaftServer (newName:String) extends Actor with Stash {
     tester ! StartupMsg(ownTerm, elecTimer)
   }
 
+  // tell tester our election timer expired and we are becoming candidate
+  def sendCandidateMsg () : Unit = {
+    tester ! CandidateMsg(ownTerm)
+  }
+
   // send vote reply back to candidate
   // tell tester we sent a vote reply back to a candidate
   def sendVoteReplyMsg (decision:Boolean, candRef:ActorRef, candTerm:Int) : Unit = {
@@ -55,21 +60,21 @@ class RaftServer (newName:String) extends Actor with Stash {
     tester ! VoteReplyMsg(ownTerm, decision, candRef, candTerm)
   }
 
+  // tell tester we recv vote reply, possible elec win, possible chg to follower
+  def sendVoteReceiptMsg (wonElection:Boolean, becameFollower:Boolean, yesVotes:Int, voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean) : Unit = {
+    tester ! VoteReceiptMsg(ownTerm, wonElection, becameFollower, yesVotes, voterRef, voterTerm, voterDecision)
+  }
+
   // send AppendEntries reply back to leader
   // tell tester we received an AppendEntries req from leader
-  def sendAppendEntriesReplyMsg(success:Boolean, leaderRef:ActorRef, leaderTerm:Int) : Unit = {
+  def sendAppendEntriesReplyMsg (success:Boolean, leaderRef:ActorRef, leaderTerm:Int) : Unit = {
     leaderRef ! AppendEntriesReply( ServerID(ownName, self), success, ownTerm )
     tester ! AppendEntriesReplyMsg(ownTerm, success, leaderRef, leaderTerm)
   }
 
-  // tell tester our election timer expired and we are becoming candidate
-  def sendCandidateMsg () : Unit = {
-    tester ! CandidateMsg(ownTerm)
-  }
-
-  // tell tester we recv vote reply, possible elec win, possible chg to follower
-  def sendVoteReceiptMsg(wonElection:Boolean, becameFollower:Boolean, yesVotes:Int, voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean) : Unit = {
-    tester ! VoteReceiptMsg(ownTerm, wonElection, becameFollower, yesVotes, voterRef, voterTerm, voterDecision)
+  // tell tester we received AppendEntries reply, possible chg to follower
+  def sendAppendReceiptMsg (becameFollower:Boolean, appenderRef:ActorRef, appenderTerm:Int) : Unit = {
+    tester ! AppendEntriesReceiptMsg(ownTerm, becameFollower, appenderRef, appenderTerm)
   }
 
   /*****************************************************************************
@@ -288,11 +293,14 @@ class RaftServer (newName:String) extends Actor with Stash {
   // leader received AppendEntriesReply from follower/candidate/leader
   def processAppendEntriesReply (id:ServerID, success:Boolean, term:Int) : Unit = {
     // if follower/candidate/leader term > ownTerm, become follower
-    if (term > ownTerm) {
-      changeToFollowerState(term)
-    }
-    // print control info for testing purposes
-    printf(f"${ownName} [T${ownTerm}]: received appendReply from ${id.name}/T${term}\n")
+    val becameFollower =
+      if (term > ownTerm) {
+        changeToFollowerState(term)
+        true
+    } else false
+
+    // send control msg to tester
+    sendAppendReceiptMsg(becameFollower, id.ref, term)
   }
 
   // leader heartbeatTimeout received: send heartbeats to maintain leadership
