@@ -16,6 +16,9 @@ final case object Start extends RaftAPI
 final case object ElectionTimeout extends RaftAPI
 final case object HeartbeatTimeout extends RaftAPI
 
+final case object InitMsg extends RaftAPI
+final case class StartupMsg (term:Int, elecTimer:Double) extends RaftAPI
+
 sealed trait RaftTestAPI
 
 final case object Shutdown extends RaftTestAPI

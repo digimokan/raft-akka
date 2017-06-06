@@ -2,7 +2,7 @@ package raft
 
 import com.typesafe.config.ConfigFactory
 import akka.serialization.Serialization.serializedActorPath
-import akka.actor.{Actor, Props, Stash, PoisonPill}
+import akka.actor.{Actor, ActorRef, Props, Stash, PoisonPill}
 import akka.routing.{RandomGroup, AddRoutee, RemoveRoutee, ActorRefRoutee, Broadcast}
 
 class RaftTester () extends Actor {
@@ -33,6 +33,9 @@ class RaftTester () extends Actor {
   // send the list of servers to each server (introduces servers to each other)
   serverIDs.map(_.ref).foreach( ref => ref ! InitWithPeers(serverIDs) )
 
+  def getName (ref:ActorRef) : String =
+    serverIDs.filter(_.ref == sender)(0).name
+
   def shutdown () : Unit = {
     raftGroup ! Broadcast(PoisonPill)
 
@@ -54,6 +57,10 @@ class RaftTester () extends Actor {
   def receive = {
     case StartAll => startAll()
     case Shutdown => shutdown()
+    case InitMsg =>
+      printf(f"${getName(sender)}: initialized with peers\n")
+    case StartupMsg(term, elecTimer) =>
+      printf(f"${getName(sender)} [T${term}]: started from crashed state as follower, ET ${elecTimer}\n")
   }
 
 }

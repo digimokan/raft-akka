@@ -32,6 +32,23 @@ class RaftServer (newName:String) extends Actor with Stash {
   var votesCollected = Set[Vote]()      // servers that voted for us
 
   /*****************************************************************************
+  * TESTING: WRAPPERS THAT COMMUNICATE WITH TESTER
+  *****************************************************************************/
+
+  // report back all state changes and behavior to tester/parent
+  val tester = parent
+
+  // tell tester that we initialized with peers
+  def sendInitMsg () : Unit = {
+    tester ! InitMsg
+  }
+
+  // tell tester that we started up and became follower with term 0
+  def sendStartupMsg (term:Int, elecTimer:Double) : Unit = {
+    tester ! StartupMsg(term, elecTimer)
+  }
+
+  /*****************************************************************************
   * INITIAL LOGICS: ATOMIC UNITS COMBINED INTO UNINITIALIZED STATE
   *****************************************************************************/
 
@@ -43,8 +60,8 @@ class RaftServer (newName:String) extends Actor with Stash {
     unstashAll()
     // become initialized (and process the saved msgs)
     changeToInitializedState()
-    // print control info for testing purposes
-    printf(f"${ownName}: initialized with peers\n")
+    // send control msg to tester
+    sendInitMsg()
   }
 
   // add a server to our list of known peers
@@ -66,6 +83,7 @@ class RaftServer (newName:String) extends Actor with Stash {
   def changeToInitializedState () : Unit = {
     // place saved msgs received prior to this init back in the msg queue
     unstashAll()
+    // process the saved msgs
     become(initialized)
   }
 
@@ -76,7 +94,7 @@ class RaftServer (newName:String) extends Actor with Stash {
   // start from down/crashed state as follower in term 0
   def start () : Unit = {
     val elecTimer = changeToFollowerState(0)
-    printf(f"${ownName} [T${ownTerm}]: started from crashed state as follower, ET ${elecTimer}\n")
+    sendStartupMsg(ownTerm, elecTimer)
   }
 
   // reset our election timer to base + optional variance
