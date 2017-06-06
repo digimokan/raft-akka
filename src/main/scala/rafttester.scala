@@ -1,17 +1,32 @@
 package raft
 
 import com.typesafe.config.ConfigFactory
-import akka.serialization.Serialization.serializedActorPath
+import scala.collection.mutable.Set
 import akka.actor.{Actor, ActorRef, Props, Stash, PoisonPill}
 import akka.routing.{RandomGroup, AddRoutee, RemoveRoutee, ActorRefRoutee, Broadcast}
+import akka.serialization.Serialization.serializedActorPath
 
 class RaftTester () extends Actor {
+
+  /*****************************************************************************
+  * DATA FIELDS
+  *****************************************************************************/
 
   // manage raft servers as name/ActorRef tuples
   case class ServerID (name:String, ref:ActorRef)
 
+  // servers that are leaders (should only be one...but invariant may occur)
+  var leaders = Set[ServerID]()
+
+  // servers that are followers
+  var followers = Set[ServerID]()
+
   // load constants from config file
   val electionTimeoutBase = ConfigFactory.load.getInt("election-timeout-base")
+
+  /*****************************************************************************
+  * INSTANTIATION CODE
+  *****************************************************************************/
 
   println("\n****************************************************************************")
   println("CREATING SERVERS / SERVER GROUP")
@@ -36,8 +51,48 @@ class RaftTester () extends Actor {
   // send the list of servers to each server (introduces servers to each other)
   serverIDs.foreach( id => id.ref ! InitWithPeers(serverIDs.map(_.ref)) )
 
+  /*****************************************************************************
+  * METHODS
+  *****************************************************************************/
+
   def getName (nameRef:ActorRef) : String =
     serverIDs.filter(id => id.ref == nameRef)(0).name
+
+  def getLeader () : Option[ServerID] =
+    if (leaders.isEmpty) {
+      None
+    } else if (leaders.size > 1) {
+      println("\n>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
+      printf(f"INVARIANT! MORE THAN 1 LEADER: ${leaders.map(_.name).mkString(" ")} \n")
+      println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n")
+      None
+    } else {
+      Some(leaders.last)
+    }
+
+  def startAll () : Unit = {
+    println("\n****************************************************************************")
+    println("STARTING ALL SERVERS: OBSERVE AN ELECTION AND LEADER HEARTBEATS")
+    println("****************************************************************************\n")
+
+    raftGroup ! Broadcast(Start)
+  }
+
+  def crashLeader () : Unit = {
+
+    println("\n****************************************************************************")
+    println("CRASHING THE LEADER: OBSERVE A NEW ELECTION AND NEW LEADER HEARTBEATS")
+    println("****************************************************************************\n")
+
+    val leader = getLeader()
+    leader match {
+      case Some(ldr) =>
+        ldr.ref ! Crash
+      case None =>
+        printf(f"\n>>>>>>>>>>>>>>>>>>>>>>>>>>> TESTER: NO LEADER TO CRASH <<<<<<<<<<<<<<<<<<<<<<<<<<<\n\n")
+    }
+
+  }
 
   def shutdown () : Unit = {
     raftGroup ! Broadcast(PoisonPill)
@@ -49,19 +104,20 @@ class RaftTester () extends Actor {
     context.stop(self)
   }
 
-  def startAll () : Unit = {
-    println("\n****************************************************************************")
-    println("STARTING ALL SERVERS: OBSERVE AN ELECTION AND LEADER HEARTBEATS")
-    println("****************************************************************************\n")
-
-    raftGroup ! Broadcast(Start)
-  }
+  /*****************************************************************************
+  * MSG PROCESSING BEHAVIOR
+  *****************************************************************************/
 
   def receive = {
 
-    case StartAll => startAll()
+    case StartAll =>
+      startAll()
 
-    case Shutdown => shutdown()
+    case CrashLeader =>
+      crashLeader()
+
+    case Shutdown =>
+      shutdown()
 
     case InitMsg =>
       printf(f"${getName(sender)}: initialized with peers\n")
@@ -69,8 +125,14 @@ class RaftTester () extends Actor {
     case StartupMsg(term, elecTimer) =>
       printf(f"${getName(sender)} [T${term}]: started from crashed state as follower, ET ${elecTimer}\n")
 
+    case FollowerMsg(followerRef, followerTerm) =>
+      followers += ServerID(getName(followerRef), followerRef)
+
     case CandidateMsg(candRef, candTerm) =>
       printf(f"${getName(candRef)} [T${candTerm}]: ET expired, becoming candidate\n")
+
+    case LeaderMsg(leaderRef, leaderTerm) =>
+      leaders += ServerID(getName(leaderRef), leaderRef)
 
     case VoteReplyMsg (voterRef, voterTerm, voterDecision, candRef, candTerm) =>
       printf(f"${getName(voterRef)} [T${voterTerm}]: handled vote req from ${getName(candRef)}/T${candTerm}, replied ${voterDecision}\n")

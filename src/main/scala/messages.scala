@@ -10,20 +10,26 @@ final case class VoteReply (voterRef:ActorRef, voterTerm:Int, voterDecision:Bool
 final case class AppendReq (leaderRef:ActorRef, leaderTerm:Int) extends RaftAPI
 final case class AppendReply (appenderRef:ActorRef, appenderTerm:Int, appenderSuccess:Boolean) extends RaftAPI
 final case object Start extends RaftAPI
+final case object Crash extends RaftAPI
 final case object ElectionTimeout extends RaftAPI
 final case object HeartbeatTimeout extends RaftAPI
 
-final case object InitMsg extends RaftAPI
-final case class StartupMsg (term:Int, elecTimer:Double) extends RaftAPI
-final case class CandidateMsg (candRef:ActorRef, candTerm:Int) extends RaftAPI
-final case class VoteReplyMsg (voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean, candRef:ActorRef, candTerm:Int) extends RaftAPI
-final case class VoteReceiptMsg (candRef:ActorRef, candTerm:Int, wonElection:Boolean, becameFollower:Boolean, yesVotes:Int, voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean)
-final case class AppendReqMsg (leaderRef:ActorRef, leaderTerm:Int, appenderRef:ActorRef) extends RaftAPI
-final case class AppendReplyMsg (appenderRef:ActorRef, appenderTerm:Int, appenderSuccess:Boolean, leaderRef:ActorRef, leaderTerm:Int) extends RaftAPI
-final case class AppendReceiptMsg (leaderRef:ActorRef, leaderTerm:Int, becameFollower:Boolean, appenderRef:ActorRef, appenderTerm:Int) extends RaftAPI
+sealed trait RaftControlAPI
+
+final case object InitMsg extends RaftControlAPI
+final case class StartupMsg (term:Int, elecTimer:Double) extends RaftControlAPI
+final case class FollowerMsg (followerRef:ActorRef, followerTerm:Int) extends RaftControlAPI
+final case class CandidateMsg (candRef:ActorRef, candTerm:Int) extends RaftControlAPI
+final case class LeaderMsg (leaderRef:ActorRef, leaderTerm:Int) extends RaftControlAPI
+final case class VoteReplyMsg (voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean, candRef:ActorRef, candTerm:Int) extends RaftControlAPI
+final case class VoteReceiptMsg (candRef:ActorRef, candTerm:Int, wonElection:Boolean, becameFollower:Boolean, yesVotes:Int, voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean) extends RaftControlAPI
+final case class AppendReqMsg (leaderRef:ActorRef, leaderTerm:Int, appenderRef:ActorRef) extends RaftControlAPI
+final case class AppendReplyMsg (appenderRef:ActorRef, appenderTerm:Int, appenderSuccess:Boolean, leaderRef:ActorRef, leaderTerm:Int) extends RaftControlAPI
+final case class AppendReceiptMsg (leaderRef:ActorRef, leaderTerm:Int, becameFollower:Boolean, appenderRef:ActorRef, appenderTerm:Int) extends RaftControlAPI
 
 sealed trait RaftTestAPI
 
 final case object Shutdown extends RaftTestAPI
 final case object StartAll extends RaftTestAPI
+final case object CrashLeader extends RaftTestAPI
 
