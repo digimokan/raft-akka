@@ -7,7 +7,10 @@ import scala.language.postfixOps
 import scala.collection.mutable.Set
 import akka.actor.{Actor, ActorRef, Cancellable, Stash}
 
-class RaftServer (newName:String) extends Actor with Stash {
+class RaftServer () extends Actor with Stash {
+
+  // manage "votes" that servers cast for candidates as ActorRef/decision tuples
+  case class Vote (ref:ActorRef, decision:Boolean)
 
   /*****************************************************************************
   * SERVER DATA STATE (FIELDS)
@@ -21,10 +24,9 @@ class RaftServer (newName:String) extends Actor with Stash {
   import context._                      // for scheduleOnce, become
 
   // persistent state: these vars will survive server crash & restart
-  val ownName = newName                 // our assigned name
-  var peers = Set[ServerID]()           // other servers we are aware of
+  var peers = Set[ActorRef]()           // other servers we are aware of
   var ownTerm = 0                       // latest term we are aware of
-  var votedFor:Option[ServerID] = None  // who we voted for in curr term
+  var votedFor:Option[ActorRef] = None  // who we voted for in curr term
 
   // volatile state: these vars will be re-initialized on server crash & restart
   var electionTimer:Cancellable = null  // elec timer for followers/candidates
@@ -50,38 +52,38 @@ class RaftServer (newName:String) extends Actor with Stash {
 
   // tell tester our election timer expired and we are becoming candidate
   def sendCandidateMsg () : Unit = {
-    tester ! CandidateMsg(ownTerm)
+    tester ! CandidateMsg(self, ownTerm)
   }
 
   // send vote reply back to candidate
   // tell tester we sent a vote reply back to a candidate
-  def sendVoteReplyMsg (decision:Boolean, candRef:ActorRef, candTerm:Int) : Unit = {
-    candRef ! VoteReply( Vote(ServerID(ownName, self), decision), ownTerm )
-    tester ! VoteReplyMsg(ownTerm, decision, candRef, candTerm)
+  def sendVoteReplyMsg (voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean, candRef:ActorRef, candTerm:Int) : Unit = {
+    candRef ! VoteReply(voterRef, voterTerm, voterDecision)
+    tester ! VoteReplyMsg(voterRef, voterTerm, voterDecision, candRef, candTerm)
   }
 
   // tell tester we recv vote reply, possible elec win, possible chg to follower
-  def sendVoteReceiptMsg (wonElection:Boolean, becameFollower:Boolean, yesVotes:Int, voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean) : Unit = {
-    tester ! VoteReceiptMsg(ownTerm, wonElection, becameFollower, yesVotes, voterRef, voterTerm, voterDecision)
+  def sendVoteReceiptMsg (candRef:ActorRef, candTerm:Int, wonElection:Boolean, becameFollower:Boolean, yesVotes:Int, voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean) : Unit = {
+    tester ! VoteReceiptMsg(candRef, candTerm, wonElection, becameFollower, yesVotes, voterRef, voterTerm, voterDecision)
   }
 
-  // send AppendEntries req to each appender
-  // tell tester we sent an AppendEntries req to each appender
-  def sendAppendEntriesReqMsg (appenderRef:ActorRef) : Unit = {
-    appenderRef ! AppendEntriesReq(ServerID(ownName, self), ownTerm)
-    tester ! AppendEntriesReqMsg(ownTerm, appenderRef)
+  // send append req to each appender
+  // tell tester we sent an append req to each appender
+  def sendAppendReqMsg (leaderRef:ActorRef, leaderTerm:Int, appenderRef:ActorRef) : Unit = {
+    appenderRef ! AppendReq(leaderRef, leaderTerm)
+    tester ! AppendReqMsg(leaderRef, leaderTerm, appenderRef)
   }
 
-  // send AppendEntries reply back to leader
-  // tell tester we received an AppendEntries req from leader
-  def sendAppendEntriesReplyMsg (success:Boolean, leaderRef:ActorRef, leaderTerm:Int) : Unit = {
-    leaderRef ! AppendEntriesReply( ServerID(ownName, self), success, ownTerm )
-    tester ! AppendEntriesReplyMsg(ownTerm, success, leaderRef, leaderTerm)
+  // send append reply back to leader
+  // tell tester we received an append req from leader
+  def sendAppendReplyMsg (appenderRef:ActorRef, appenderTerm:Int, appenderSuccess:Boolean, leaderRef:ActorRef, leaderTerm:Int) : Unit = {
+    leaderRef ! AppendReply(appenderRef, appenderTerm, appenderSuccess)
+    tester ! AppendReplyMsg(appenderRef, appenderTerm, appenderSuccess, leaderRef, leaderTerm)
   }
 
-  // tell tester we received AppendEntries reply, possible chg to follower
-  def sendAppendReceiptMsg (becameFollower:Boolean, appenderRef:ActorRef, appenderTerm:Int) : Unit = {
-    tester ! AppendEntriesReceiptMsg(ownTerm, becameFollower, appenderRef, appenderTerm)
+  // tell tester we received append reply, possible chg to follower
+  def sendAppendReceiptMsg (leaderRef:ActorRef, leaderTerm:Int, becameFollower:Boolean, appenderRef:ActorRef, appenderTerm:Int) : Unit = {
+    tester ! AppendReceiptMsg(leaderRef, leaderTerm, becameFollower, appenderRef, appenderTerm)
   }
 
   /*****************************************************************************
@@ -89,7 +91,7 @@ class RaftServer (newName:String) extends Actor with Stash {
   *****************************************************************************/
 
   // initialize this server with list of known peers
-  def initialize (peerList:List[ServerID]) : Unit = {
+  def initialize (peerList:List[ActorRef]) : Unit = {
     // add list of peers to our set of peers
     addPeers(peerList)
     // place saved msgs received prior to this init back in the msg queue
@@ -101,14 +103,14 @@ class RaftServer (newName:String) extends Actor with Stash {
   }
 
   // add a server to our list of known peers
-  def addPeer (id:ServerID) : Unit = {
-    if (id.name != ownName)
-      peers += id
+  def addPeer (peer:ActorRef) : Unit = {
+    if (peer != self)
+      peers += peer
   }
 
   // add many servers to our list of known peers
-  def addPeers (peerList:List[ServerID]) : Unit = {
-    peerList.foreach( id => addPeer(id) )
+  def addPeers (peerList:List[ActorRef]) : Unit = {
+    peerList.foreach( ref => addPeer(ref) )
   }
 
   /*****************************************************************************
@@ -155,39 +157,39 @@ class RaftServer (newName:String) extends Actor with Stash {
 
   }
 
-  // follower OR candidate received VoteReq from a candidate
-  def processVoteReq (voteReq:VoteReq) : Unit = {
+  // voter (follower OR candidate) received vote request from a candidate
+  def processVoteReq (candRef:ActorRef, candTerm:Int) : Unit = {
 
     // determine whether to vote for candidate
-    def castVote (voteReq:VoteReq) : Boolean = {
+    def castVote (candRef:ActorRef) : Boolean = {
       // if log checks ok and no vote yet cast, record our vote for candidate
-      if ( (votedFor == None) || (votedFor == Some(voteReq.id)) )
-        votedFor = Some(voteReq.id)
+      if (votedFor == None)
+        votedFor = Some(candRef)
       // return true if we voted yes NOW for candidate, OR voted yes in the past
-      return (votedFor == Some(voteReq.id))
+      return (votedFor == Some(candRef))
     }
 
     // save the yes/no vote
-    var dec =
+    var decision =
       // req term < ownTerm: reply with a "no" vote
-      if (voteReq.term < ownTerm) {
+      if (candTerm < ownTerm) {
         false
-      // req term == ownTerm: continue as candidate/follower and cast y/n vote
-      } else if (voteReq.term == ownTerm) {
-        castVote(voteReq)
-      // req term > ownTerm: adv ownTerm, cand becomes follow as nec, cast vote
+      // candTerm == ownTerm: continue as candidate/follower and cast y/n vote
+      } else if (candTerm == ownTerm) {
+        castVote(candRef)
+      // candTerm > ownTerm: adv ownTerm, cand becomes follow as nec, cast vote
       } else {
-        changeToFollowerState(voteReq.term)
-        castVote(voteReq)
+        changeToFollowerState(candTerm)
+        castVote(candRef)
       }
 
     // send VoteReply to candidate, send control msg to tester
-    sendVoteReplyMsg(dec, voteReq.id.ref, voteReq.term)
+    sendVoteReplyMsg(self, ownTerm, decision, candRef, candTerm)
 
   }
 
-  // appender (follower/candidate/leader) received AppendEntriesReq from leader
-  def processAppendEntriesReq (leaderId:ServerID, leaderTerm:Int) : Unit = {
+  // appender (follower/candidate/leader) received append req from leader
+  def processAppendReq (leaderRef:ActorRef, leaderTerm:Int) : Unit = {
 
     // placeholder for log checks
     var success:Boolean = false
@@ -206,8 +208,8 @@ class RaftServer (newName:String) extends Actor with Stash {
       success = true
     }
 
-    // send AppendEntriesReply back to leader, send control msg to tester
-    sendAppendEntriesReplyMsg(success, leaderId.ref, leaderTerm)
+    // send append reply back to leader, send control msg to tester
+    sendAppendReplyMsg(self, ownTerm, success, leaderRef, leaderTerm)
 
   }
 
@@ -236,36 +238,38 @@ class RaftServer (newName:String) extends Actor with Stash {
   *****************************************************************************/
 
   def changeToCandidateState (newTerm:Int) : Unit = {
-    // set our current term
+
+    // start an election (attempt to become leader)
+    def startElection () : Unit = {
+      // record that we voted for ourself this term
+      votedFor = Some(self)
+      // clear the set of servers that sent a yes/no vote to us
+      votesCollected.clear()
+      // have server collect vote for itself
+      votesCollected += Vote(self, true)
+      // request a yes/no vote from each server
+      peers.foreach( voterRef => voterRef ! VoteReq(self, ownTerm) )
+    }
+
+    // set our current term, start election
     ownTerm = newTerm
-    // start an election (vote for ourself, request votes from other servers)
     startElection()
-    // reset our election timer to its FULL/MAX possible timer value
+
+    // reset our election timer MAX possible value, change "receive" behavior
     resetElectionTimer(false)
-    // change message processing "receive" behavior
     become(candidate)
+
     // send control msg to tester
     sendCandidateMsg()
+
   }
 
-  // start an election (attempt to become leader)
-  def startElection () : Unit = {
-    // record that we voted for ourself this term
-    votedFor = Some(ServerID(ownName, self))
-    // clear the set of servers that sent a yes/no vote to us
-    votesCollected.clear()
-    // have server collect vote for itself
-    votesCollected += Vote(ServerID(ownName, self), true)
-    // request a yes/no vote from each server
-    peers.foreach( id => id.ref ! VoteReq(ServerID(ownName, self), ownTerm) )
-  }
-
-  // candidate received vote reply from a server
-  def processVoteReply (vote:Vote, voterTerm:Int) : Unit = {
+  // candidate received vote reply from a voter
+  def processVoteReply (voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean) : Unit = {
 
     // collect received vote, tally total number of "yes" votes
-    votesCollected += vote
-    val yesVotes = votesCollected.count(_.decision == true)
+    votesCollected += Vote(voterRef, voterDecision)
+    val yesVotes = votesCollected.count(vote => (vote.decision == true))
 
     // check if reply term > ownTerm: abort election and become follower
     val becameFollower =
@@ -282,7 +286,7 @@ class RaftServer (newName:String) extends Actor with Stash {
       } else false
 
     // send control msg to tester
-    sendVoteReceiptMsg(wonElection, becameFollower, yesVotes, vote.id.ref, voterTerm, vote.decision)
+    sendVoteReceiptMsg(self, ownTerm, wonElection, becameFollower, yesVotes, voterRef, voterTerm, voterDecision)
 
   }
 
@@ -302,9 +306,9 @@ class RaftServer (newName:String) extends Actor with Stash {
     become(leader)
   }
 
-  // leader received AppendEntriesRepl from appender (follower/candidate/leader)
-  def processAppendEntriesReply (appenderId:ServerID, success:Boolean, appenderTerm:Int) : Unit = {
-    // if follower/candidate/leader term > ownTerm, become follower
+  // leader received append reply from appender (follower/candidate/leader)
+  def processAppendReply (appenderRef:ActorRef, appenderTerm:Int, appenderSuccess:Boolean) : Unit = {
+    // if appender term > ownTerm, become follower
     val becameFollower =
       if (appenderTerm > ownTerm) {
         changeToFollowerState(appenderTerm)
@@ -312,13 +316,13 @@ class RaftServer (newName:String) extends Actor with Stash {
     } else false
 
     // send control msg to tester
-    sendAppendReceiptMsg(becameFollower, appenderId.ref, appenderTerm)
+    sendAppendReceiptMsg(self, ownTerm, becameFollower, appenderRef, appenderTerm)
   }
 
   // leader heartbeatTimeout received: send heartbeats to maintain leadership
   def broadcastHeartbeats () : Unit = {
-    // send empty AppendEntriesReq to each peer, send control msg to tester
-    peers.foreach( appenderId => sendAppendEntriesReqMsg(appenderId.ref) )
+    // send empty append req to each peer, send control msg to tester
+    peers.foreach( appenderRef => sendAppendReqMsg(self, ownTerm, appenderRef) )
   }
 
   /*****************************************************************************
@@ -341,14 +345,14 @@ class RaftServer (newName:String) extends Actor with Stash {
     case _ => stash()
   }
 
-  // FOLLOWER: respond to VoteReq/AppendEntries from candidates and leaders
+  // FOLLOWER: respond to VoteReq/AppendReq from candidates and leaders
   def follower : Receive = {
     // our election timer expired: become candidate and start election
     case ElectionTimeout => changeToCandidateState(ownTerm + 1)
-    // received vote req from server that started (or is continuing) an election
-    case VoteReq(id, term) => processVoteReq(VoteReq(id, term))
-    // received AppendEntriesReq from a new leader
-    case AppendEntriesReq(leaderId, leaderTerm) => processAppendEntriesReq(leaderId, leaderTerm)
+    // received VoteReq from candidate that started (or is continuing) an election
+    case VoteReq(candRef, candTerm) => processVoteReq(candRef, candTerm)
+    // received AppendReq from a new leader
+    case AppendReq(leaderRef, leaderTerm) => processAppendReq(leaderRef, leaderTerm)
   }
 
   // CANDIDATE: respond to VoteReply, and to VoteReq from other candidates
@@ -356,21 +360,21 @@ class RaftServer (newName:String) extends Actor with Stash {
     // election timer expired without collecting majority: start a NEW election
     case ElectionTimeout => changeToCandidateState(ownTerm + 1)
     // received a reply to a vote request sent by us
-    case VoteReply(vote, term) => processVoteReply(vote, term)
-    // received vote req from another server holding SIMULTANEOUS election
-    case VoteReq(id, term) => processVoteReq(VoteReq(id, term))
-    // received AppendEntriesReq from a server already established as leader
-    case AppendEntriesReq(leaderId, leaderTerm) => processAppendEntriesReq(leaderId, leaderTerm)
+    case VoteReply(voterRef, voterTerm, voterDecision) => processVoteReply(voterRef, voterTerm, voterDecision)
+    // received VoteReq from another candidate holding SIMULTANEOUS election
+    case VoteReq(candRef, candTerm) => processVoteReq(candRef, candTerm)
+    // received AppendReq from a server already established as leader
+    case AppendReq(leaderRef, leaderTerm) => processAppendReq(leaderRef, leaderTerm)
   }
 
-  // LEADER: respond to AppendEntriesReq/Reply from follows, cands, leads
+  // LEADER: respond to AppendReq/Reply from follows, cands, leads
   def leader : Receive = {
     // our heartbeat timer expired: send heartbeats to maintain leadership
     case HeartbeatTimeout => broadcastHeartbeats()
-    // received AppendEntriesReq from a leader server in later term
-    case AppendEntriesReq(leaderId, leaderTerm) => processAppendEntriesReq(leaderId, leaderTerm)
-    // received AppendEntriesReply from a follower/candidate/leader
-    case AppendEntriesReply(id, success, term) => processAppendEntriesReply(id, success, term)
+    // received AppendReq from a leader server in later term
+    case AppendReq(leaderRef, leaderTerm) => processAppendReq(leaderRef, leaderTerm)
+    // received AppendReply from an appender (follower/candidate/leader)
+    case AppendReply(appenderRef, appenderTerm, appenderSuccess) => processAppendReply(appenderRef, appenderTerm, appenderSuccess)
   }
 
 }

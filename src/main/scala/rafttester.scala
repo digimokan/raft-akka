@@ -7,6 +7,9 @@ import akka.routing.{RandomGroup, AddRoutee, RemoveRoutee, ActorRefRoutee, Broad
 
 class RaftTester () extends Actor {
 
+  // manage raft servers as name/ActorRef tuples
+  case class ServerID (name:String, ref:ActorRef)
+
   // load constants from config file
   val electionTimeoutBase = ConfigFactory.load.getInt("election-timeout-base")
 
@@ -15,11 +18,11 @@ class RaftTester () extends Actor {
   println("****************************************************************************\n")
 
   // create 5 raft servers, each with an "ID" (an actor ref and assigned name)
-  val serverA = ServerID( "serverA", context.actorOf(Props(classOf[RaftServer], "serverA"), name = "serverA") )
-  val serverB = ServerID( "serverB", context.actorOf(Props(classOf[RaftServer], "serverB"), name = "serverB") )
-  val serverC = ServerID( "serverC", context.actorOf(Props(classOf[RaftServer], "serverC"), name = "serverC") )
-  val serverD = ServerID( "serverD", context.actorOf(Props(classOf[RaftServer], "serverD"), name = "serverD") )
-  val serverE = ServerID( "serverE", context.actorOf(Props(classOf[RaftServer], "serverE"), name = "serverE") )
+  val serverA = ServerID( "serverA", context.actorOf(Props[RaftServer], name = "serverA") )
+  val serverB = ServerID( "serverB", context.actorOf(Props[RaftServer], name = "serverB") )
+  val serverC = ServerID( "serverC", context.actorOf(Props[RaftServer], name = "serverC") )
+  val serverD = ServerID( "serverD", context.actorOf(Props[RaftServer], name = "serverD") )
+  val serverE = ServerID( "serverE", context.actorOf(Props[RaftServer], name = "serverE") )
 
   // add 5 servers to one list for easier management
   var serverIDs = List(serverA, serverB, serverC, serverD, serverE)
@@ -31,7 +34,7 @@ class RaftTester () extends Actor {
   )
 
   // send the list of servers to each server (introduces servers to each other)
-  serverIDs.foreach( id => id.ref ! InitWithPeers(serverIDs) )
+  serverIDs.foreach( id => id.ref ! InitWithPeers(serverIDs.map(_.ref)) )
 
   def getName (nameRef:ActorRef) : String =
     serverIDs.filter(id => id.ref == nameRef)(0).name
@@ -66,30 +69,29 @@ class RaftTester () extends Actor {
     case StartupMsg(term, elecTimer) =>
       printf(f"${getName(sender)} [T${term}]: started from crashed state as follower, ET ${elecTimer}\n")
 
-    case CandidateMsg(candTerm) =>
-      printf(f"${getName(sender)} [T${candTerm}]: ET expired, becoming candidate\n")
+    case CandidateMsg(candRef, candTerm) =>
+      printf(f"${getName(candRef)} [T${candTerm}]: ET expired, becoming candidate\n")
 
-    case VoteReplyMsg (voterTerm, voterDecision, candRef, candTerm) =>
-      printf(f"${getName(sender)} [T${voterTerm}]: handled vote req from ${getName(candRef)}/T${candTerm}, replied ${voterDecision}\n")
+    case VoteReplyMsg (voterRef, voterTerm, voterDecision, candRef, candTerm) =>
+      printf(f"${getName(voterRef)} [T${voterTerm}]: handled vote req from ${getName(candRef)}/T${candTerm}, replied ${voterDecision}\n")
 
-    case VoteReceiptMsg(candTerm, wonElection, becameFollower, yesVotes, voterRef, voterTerm, voterDecision) =>
+    case VoteReceiptMsg(candRef, candTerm, wonElection, becameFollower, yesVotes, voterRef, voterTerm, voterDecision) =>
       if (becameFollower) {
-        printf(f"${getName(sender)} [T${candTerm}]: received voteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), aborted election and became follower\n")
+        printf(f"${getName(candRef)} [T${candTerm}]: received voteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), aborted election and became follower\n")
       } else if (wonElection) {
-        printf(f"${getName(sender)} [T${candTerm}]: received voteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), achieved majority ${yesVotes} & becoming leader\n")
+        printf(f"${getName(candRef)} [T${candTerm}]: received voteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), achieved majority ${yesVotes} & becoming leader\n")
       } else { // received vote, haven't won yet so continuing election
-        printf(f"${getName(sender)} [T${candTerm}]: received voteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), have ${yesVotes} yes votes\n")
+        printf(f"${getName(candRef)} [T${candTerm}]: received voteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), have ${yesVotes} yes votes\n")
       }
 
-    // print control info for testing purposes
-    case AppendEntriesReqMsg (leaderTerm:Int, appenderRef:ActorRef) =>
-      printf(f"${getName(sender)} [T${leaderTerm}]: HT expired, sent empty appendReq to ${getName(appenderRef)}\n")
+    case AppendReqMsg (leaderRef:ActorRef, leaderTerm:Int, appenderRef:ActorRef) =>
+      printf(f"${getName(leaderRef)} [T${leaderTerm}]: HT expired, sent empty appendReq to ${getName(appenderRef)}\n")
 
-    case AppendEntriesReplyMsg (appenderTerm, success, leaderRef, leaderTerm) =>
-      printf(f"${getName(sender)} [T${appenderTerm}]: received appendReq from ${getName(leaderRef)}/T${leaderTerm}\n")
+    case AppendReplyMsg (appenderRef, appenderTerm, appenderSuccess, leaderRef, leaderTerm) =>
+      printf(f"${getName(appenderRef)} [T${appenderTerm}]: received appendReq from ${getName(leaderRef)}/T${leaderTerm}\n")
 
-    case AppendEntriesReceiptMsg (leaderTerm, becameFollower, appenderRef, appenderTerm) =>
-      printf(f"${getName(sender)} [T${leaderTerm}]: received appendReply from ${getName(appenderRef)}/T${appenderTerm}\n")
+    case AppendReceiptMsg (leaderRef, leaderTerm, becameFollower, appenderRef, appenderTerm) =>
+      printf(f"${getName(leaderRef)} [T${leaderTerm}]: received appendReply from ${getName(appenderRef)}/T${appenderTerm}\n")
 
   }
 
