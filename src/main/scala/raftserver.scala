@@ -48,6 +48,12 @@ class RaftServer (newName:String) extends Actor with Stash {
     tester ! StartupMsg(term, elecTimer)
   }
 
+  // send vote reply back to candidate
+  // tell tester that we sent a vote reply back to a candidate
+  def sendVoteReplyMsg (decision:Boolean, candRef:ActorRef, candTerm:Int) : Unit = {
+    candRef ! VoteReply( Vote(ServerID(ownName, self), decision), ownTerm )
+    tester ! VoteReplyMsg(ownTerm, decision, candRef, candTerm)
+  }
   /*****************************************************************************
   * INITIAL LOGICS: ATOMIC UNITS COMBINED INTO UNINITIALIZED STATE
   *****************************************************************************/
@@ -94,6 +100,7 @@ class RaftServer (newName:String) extends Actor with Stash {
   // start from down/crashed state as follower in term 0
   def start () : Unit = {
     val elecTimer = changeToFollowerState(0)
+    // send control msg to tester
     sendStartupMsg(ownTerm, elecTimer)
   }
 
@@ -113,20 +120,19 @@ class RaftServer (newName:String) extends Actor with Stash {
     return (timerValue.toDouble / 1000)
   }
 
-  // follower OR candidate determines whether to vote for a candidate
-  def castVote (voteReq:VoteReq) : Boolean = {
-    // if log checks ok and no vote yet cast, vote/revote "yes" for candidate
-    if ( (votedFor == None) || (votedFor == voteReq.id) ) {
-      votedFor = Some(voteReq.id)
-      return true
-    // else reply with a "no" vote
-    } else {
-      return false
-    }
-  }
-
   // follower OR candidate received VoteReq from a candidate
   def processVoteReq (voteReq:VoteReq) : Unit = {
+
+    // determine whether to vote for candidate
+    def castVote (voteReq:VoteReq) : Boolean = {
+      // if log checks ok and no vote yet cast, record our vote for candidate
+      if ( (votedFor == None) || (votedFor == Some(voteReq.id)) )
+        votedFor = Some(voteReq.id)
+      // return true if we voted yes NOW for candidate, OR voted yes in the past
+      return (votedFor == Some(voteReq.id))
+    }
+
+    // save the yes/no vote
     var dec =
       // req term < ownTerm: reply with a "no" vote
       if (voteReq.term < ownTerm) {
@@ -134,15 +140,15 @@ class RaftServer (newName:String) extends Actor with Stash {
       // req term == ownTerm: continue as candidate/follower and cast y/n vote
       } else if (voteReq.term == ownTerm) {
         castVote(voteReq)
-      // req term > ownTerm: advance ownTerm, candidate becomes follower as nec
+      // req term > ownTerm: adv ownTerm, cand becomes follow as nec, cast vote
       } else {
         changeToFollowerState(voteReq.term)
         castVote(voteReq)
       }
-    // send the yes/no reply back to candidate
-    voteReq.id.ref ! VoteReply( Vote(ServerID(ownName, self), dec), ownTerm )
-    // print control info for testing purposes
-    printf(f"${ownName} [T${ownTerm}]: handled vote req from ${voteReq.id.name}/T${voteReq.term}, replied ${dec}\n")
+
+    // send VoteReply to candidate, send control msg to tester
+    sendVoteReplyMsg(dec, voteReq.id.ref, voteReq.term)
+
   }
 
   // follower/candidate/leader received AppendEntriesReq from leader
