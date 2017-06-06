@@ -65,6 +65,8 @@ class RaftTester () extends Actor {
       printf(f"${getName(sender)} [T${term}]: handled vote req from ${getName(candRef)}/T${candTerm}, replied ${decision}\n")
     case AppendEntriesReplyMsg (term, success, leaderRef, leaderTerm) =>
       printf(f"${getName(sender)} [T${term}]: received appendReq from ${getName(leaderRef)}/T${leaderTerm}\n")
+    case CandidateMsg(term) =>
+      printf(f"${getName(sender)} [T${term}]: ET expired, becoming candidate\n")
   }
 
 }

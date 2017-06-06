@@ -62,6 +62,11 @@ class RaftServer (newName:String) extends Actor with Stash {
     tester ! AppendEntriesReplyMsg(ownTerm, success, leaderRef, leaderTerm)
   }
 
+  // tell tester our election timer expired and we are becoming candidate
+  def sendCandidateMsg (term:Int) : Unit = {
+    tester ! CandidateMsg(term)
+  }
+
   /*****************************************************************************
   * INITIAL LOGICS: ATOMIC UNITS COMBINED INTO UNINITIALIZED STATE
   *****************************************************************************/
@@ -200,6 +205,7 @@ class RaftServer (newName:String) extends Actor with Stash {
       heartbeatTimer.cancel()
     // change message processing "receive" behavior
     become(follower)
+    // return value of newly-set timer
     return elecTimer
   }
 
@@ -216,8 +222,8 @@ class RaftServer (newName:String) extends Actor with Stash {
     resetElectionTimer(false)
     // change message processing "receive" behavior
     become(candidate)
-    // print control info for testing purposes
-    printf(f"${ownName} [T${ownTerm}]: ET expired, becoming candidate\n")
+    // send control msg to tester
+    sendCandidateMsg(ownTerm)
   }
 
   // start an election (attempt to become leader)
