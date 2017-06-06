@@ -33,8 +33,8 @@ class RaftTester () extends Actor {
   // send the list of servers to each server (introduces servers to each other)
   serverIDs.map(_.ref).foreach( ref => ref ! InitWithPeers(serverIDs) )
 
-  def getName (ref:ActorRef) : String =
-    serverIDs.filter(_.ref == sender)(0).name
+  def getName (inref:ActorRef) : String =
+    serverIDs.filter(_.ref == inref)(0).name
 
   def shutdown () : Unit = {
     raftGroup ! Broadcast(PoisonPill)
@@ -55,18 +55,35 @@ class RaftTester () extends Actor {
   }
 
   def receive = {
+
     case StartAll => startAll()
+
     case Shutdown => shutdown()
+
     case InitMsg =>
       printf(f"${getName(sender)}: initialized with peers\n")
+
     case StartupMsg(term, elecTimer) =>
       printf(f"${getName(sender)} [T${term}]: started from crashed state as follower, ET ${elecTimer}\n")
-    case VoteReplyMsg (term, decision, candRef, candTerm) =>
-      printf(f"${getName(sender)} [T${term}]: handled vote req from ${getName(candRef)}/T${candTerm}, replied ${decision}\n")
+
+    case VoteReplyMsg (voterTerm, voterDecision, candRef, candTerm) =>
+      printf(f"${getName(sender)} [T${voterTerm}]: handled vote req from ${getName(candRef)}/T${candTerm}, replied ${voterDecision}\n")
+
     case AppendEntriesReplyMsg (term, success, leaderRef, leaderTerm) =>
       printf(f"${getName(sender)} [T${term}]: received appendReq from ${getName(leaderRef)}/T${leaderTerm}\n")
-    case CandidateMsg(term) =>
-      printf(f"${getName(sender)} [T${term}]: ET expired, becoming candidate\n")
+
+    case CandidateMsg(candTerm) =>
+      printf(f"${getName(sender)} [T${candTerm}]: ET expired, becoming candidate\n")
+
+    case VoteReceiptMsg(candTerm, wonElection, becameFollower, yesVotes, voterRef, voterTerm, voterDecision) =>
+      if (becameFollower) {
+        printf(f"${getName(sender)} [T${candTerm}]: received voteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), aborted election and became follower\n")
+      } else if (wonElection) {
+        printf(f"${getName(sender)} [T${candTerm}]: received voteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), achieved majority ${yesVotes} & becoming leader\n")
+      } else { // received vote, haven't won yet so continuing election
+        printf(f"${getName(sender)} [T${candTerm}]: received voteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), have ${yesVotes} yes votes\n")
+      }
+
   }
 
 }

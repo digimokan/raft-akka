@@ -44,8 +44,8 @@ class RaftServer (newName:String) extends Actor with Stash {
   }
 
   // tell tester we started up and became follower with term 0
-  def sendStartupMsg (term:Int, elecTimer:Double) : Unit = {
-    tester ! StartupMsg(term, elecTimer)
+  def sendStartupMsg (elecTimer:Double) : Unit = {
+    tester ! StartupMsg(ownTerm, elecTimer)
   }
 
   // send vote reply back to candidate
@@ -56,15 +56,20 @@ class RaftServer (newName:String) extends Actor with Stash {
   }
 
   // send AppendEntries reply back to leader
-  // tell tester we sent an AppendEntries reply back to leader
+  // tell tester we received an AppendEntries req from leader
   def sendAppendEntriesReplyMsg(success:Boolean, leaderRef:ActorRef, leaderTerm:Int) : Unit = {
     leaderRef ! AppendEntriesReply( ServerID(ownName, self), success, ownTerm )
     tester ! AppendEntriesReplyMsg(ownTerm, success, leaderRef, leaderTerm)
   }
 
   // tell tester our election timer expired and we are becoming candidate
-  def sendCandidateMsg (term:Int) : Unit = {
-    tester ! CandidateMsg(term)
+  def sendCandidateMsg () : Unit = {
+    tester ! CandidateMsg(ownTerm)
+  }
+
+  // tell tester we recv vote reply, possible elec win, possible chg to follower
+  def sendVoteReceiptMsg(wonElection:Boolean, becameFollower:Boolean, yesVotes:Int, voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean) : Unit = {
+    tester ! VoteReceiptMsg(ownTerm, wonElection, becameFollower, yesVotes, voterRef, voterTerm, voterDecision)
   }
 
   /*****************************************************************************
@@ -114,7 +119,7 @@ class RaftServer (newName:String) extends Actor with Stash {
   def start () : Unit = {
     val elecTimer = changeToFollowerState(0)
     // send control msg to tester
-    sendStartupMsg(ownTerm, elecTimer)
+    sendStartupMsg(elecTimer)
   }
 
   // reset our election timer to base + optional variance
@@ -223,7 +228,7 @@ class RaftServer (newName:String) extends Actor with Stash {
     // change message processing "receive" behavior
     become(candidate)
     // send control msg to tester
-    sendCandidateMsg(ownTerm)
+    sendCandidateMsg()
   }
 
   // start an election (attempt to become leader)
@@ -239,30 +244,29 @@ class RaftServer (newName:String) extends Actor with Stash {
   }
 
   // candidate received vote reply from a server
-  def processVoteReply (vote:Vote, term:Int) : Unit = {
-    // reply term > ownTerm: abort election and become follower
-    if (term > ownTerm) {
-      changeToFollowerState(term)
-    // else tally the vote and determine possible election results
-    } else {
-      tallyVote(vote)
-    }
-    if (heartbeatTimer == null) {
-      printf(f"${ownName} [T${ownTerm}]: received voteReply from ${vote.id.name}/T${term}, ${vote.decision}\n")
-    } else {
-      printf(f"${ownName} [T${ownTerm}]: received voteReply from ${vote.id.name}/T${term}, ${vote.decision}, achieved majority ${votesCollected.size} & becoming leader\n")
-    }
-  }
+  def processVoteReply (vote:Vote, voterTerm:Int) : Unit = {
 
-  // candidate tallies received vote and determines possible election results
-  def tallyVote (vote:Vote) : Unit = {
-    // add the received vote to set of collected votes
+    // collect received vote, tally total number of "yes" votes
     votesCollected += vote
-    // tally the total number of "yes" votes received
     val yesVotes = votesCollected.count(_.decision == true)
-    // if total num yes votes is now majority, change to leader state
-    if (yesVotes > (peers.size / 2))
-      changeToLeaderState()
+
+    // check if reply term > ownTerm: abort election and become follower
+    val becameFollower =
+      if (voterTerm > ownTerm) {
+        changeToFollowerState(voterTerm)
+        true
+      } else false
+
+    // check if total num yes votes now majority: change to leader state
+    val wonElection =
+      if (yesVotes > (peers.size / 2)) {
+        changeToLeaderState()
+        true
+      } else false
+
+    // send control msg to tester
+    sendVoteReceiptMsg(wonElection, becameFollower, yesVotes, vote.id.ref, voterTerm, vote.decision)
+
   }
 
   /*****************************************************************************
