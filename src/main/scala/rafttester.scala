@@ -21,6 +21,9 @@ class RaftTester () extends Actor {
   // servers that are followers
   var followers = Set[ServerID]()
 
+  // leader that tester intentionally crashes
+  var crashedLeader:Option[ServerID] = None
+
   // load constants from config file
   val electionTimeoutBase = ConfigFactory.load.getInt("election-timeout-base")
 
@@ -88,8 +91,24 @@ class RaftTester () extends Actor {
     leader match {
       case Some(ldr) =>
         ldr.ref ! Crash
+        crashedLeader = Some(ldr)
       case None =>
         printf(f"\n>>>>>>>>>>>>>>>>>>>>>>>>>>> TESTER: NO LEADER TO CRASH <<<<<<<<<<<<<<<<<<<<<<<<<<<\n\n")
+    }
+
+  }
+
+  def restartLeader () : Unit = {
+
+    println("\n*****************************************************************************")
+    println("RESTARTING CRASHED LEADER AS FOLLOWER: OBSERVE IT UPDATE ITS TERM AS FOLLOWER")
+    println("*****************************************************************************\n")
+
+    crashedLeader match {
+      case Some(ldr) =>
+        ldr.ref ! Start
+      case None =>
+        printf(f"\n>>>>>>>>>>>>>>>>>>>>>>>>>>> TESTER: NO LEADER TO RESTART <<<<<<<<<<<<<<<<<<<<<<<<<<<\n\n")
     }
 
   }
@@ -116,6 +135,9 @@ class RaftTester () extends Actor {
     case CrashLeader =>
       crashLeader()
 
+    case RestartLeader =>
+      restartLeader()
+
     case Shutdown =>
       shutdown()
 
@@ -135,25 +157,25 @@ class RaftTester () extends Actor {
       leaders += ServerID(getName(leaderRef), leaderRef)
 
     case VoteReplyMsg (voterRef, voterTerm, voterDecision, candRef, candTerm) =>
-      printf(f"${getName(voterRef)} [T${voterTerm}]: handled vote req from ${getName(candRef)}/T${candTerm}, replied ${voterDecision}\n")
+      printf(f"${getName(voterRef)} [T${voterTerm}]: received VoteReq from ${getName(candRef)}/T${candTerm}, replied ${voterDecision}\n")
 
     case VoteReceiptMsg(candRef, candTerm, wonElection, becameFollower, yesVotes, voterRef, voterTerm, voterDecision) =>
       if (becameFollower) {
-        printf(f"${getName(candRef)} [T${candTerm}]: received voteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), aborted election and became follower\n")
+        printf(f"${getName(candRef)} [T${candTerm}]: received VoteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), aborted election and became follower\n")
       } else if (wonElection) {
-        printf(f"${getName(candRef)} [T${candTerm}]: received voteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), achieved majority ${yesVotes} & becoming leader\n")
+        printf(f"${getName(candRef)} [T${candTerm}]: received VoteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), achieved majority ${yesVotes} & becoming leader\n")
       } else { // received vote, haven't won yet so continuing election
-        printf(f"${getName(candRef)} [T${candTerm}]: received voteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), have ${yesVotes} yes votes\n")
+        printf(f"${getName(candRef)} [T${candTerm}]: received VoteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), have ${yesVotes} yes votes\n")
       }
 
     case AppendReqMsg (leaderRef:ActorRef, leaderTerm:Int, appenderRef:ActorRef) =>
-      printf(f"${getName(leaderRef)} [T${leaderTerm}]: HT expired, sent empty appendReq to ${getName(appenderRef)}\n")
+      printf(f"${getName(leaderRef)} [T${leaderTerm}]: HT expired, sent empty AppendReq to ${getName(appenderRef)}\n")
 
     case AppendReplyMsg (appenderRef, appenderTerm, appenderSuccess, leaderRef, leaderTerm) =>
-      printf(f"${getName(appenderRef)} [T${appenderTerm}]: received appendReq from ${getName(leaderRef)}/T${leaderTerm}\n")
+      printf(f"${getName(appenderRef)} [T${appenderTerm}]: received AppendReq from ${getName(leaderRef)}/T${leaderTerm}\n")
 
     case AppendReceiptMsg (leaderRef, leaderTerm, becameFollower, appenderRef, appenderTerm) =>
-      printf(f"${getName(leaderRef)} [T${leaderTerm}]: received appendReply from ${getName(appenderRef)}/T${appenderTerm}\n")
+      printf(f"${getName(leaderRef)} [T${leaderTerm}]: received AppendReply from ${getName(appenderRef)}/T${appenderTerm}\n")
 
   }
 

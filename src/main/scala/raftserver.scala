@@ -127,12 +127,19 @@ class RaftServer () extends Actor with Stash {
   * INITIALIZED LOGICS: ATOMIC UNITS COMBINED INTO INITIALIZED STATE
   *****************************************************************************/
 
-  // server has been initialized with set of peers: now wait to start
+  // First Start: server has been init with set of peers: now wait to start
+  // Post-Start: crash/down the server and erase all volatile state
   def changeToCrashedState () : Unit = {
     // place saved msgs received prior to this init back in the msg queue
     unstashAll()
     // process the saved msgs
     become(crashed)
+    // erase all volatile state
+    if (electionTimer != null)
+      electionTimer.cancel()
+    if (heartbeatTimer != null)
+      heartbeatTimer.cancel()
+    votesCollected.clear()
   }
 
   /*****************************************************************************
@@ -144,6 +151,11 @@ class RaftServer () extends Actor with Stash {
     val elecTimer = changeToFollowerState(0)
     // send control msg to tester
     sendStartupMsg(elecTimer)
+  }
+
+  // crash/down the server and erase all volatile state
+  def crash () : Unit = {
+    changeToCrashedState()
   }
 
   // reset our election timer to base + optional variance
@@ -360,7 +372,7 @@ class RaftServer () extends Actor with Stash {
   // FOLLOWER: respond to VoteReq/AppendReq from candidates and leaders
   def follower : Receive = {
     // crash this server: wait to startup again as follower in term 0
-    case Crash => changeToCrashedState()
+    case Crash => crash()
     // start from crashed/down state as follower in term 0
     case Start => start()
     // our election timer expired: become candidate and start election
@@ -374,7 +386,7 @@ class RaftServer () extends Actor with Stash {
   // CANDIDATE: respond to VoteReply, and to VoteReq from other candidates
   def candidate : Receive = {
     // crash this server: wait to startup again as follower in term 0
-    case Crash => changeToCrashedState()
+    case Crash => crash()
     // start from crashed/down state as follower in term 0
     case Start => start()
     // election timer expired without collecting majority: start a NEW election
@@ -390,7 +402,7 @@ class RaftServer () extends Actor with Stash {
   // LEADER: respond to AppendReq/Reply from follows, cands, leads
   def leader : Receive = {
     // crash this server: wait to startup again as follower in term 0
-    case Crash => changeToCrashedState()
+    case Crash => crash()
     // start from crashed/down state as follower in term 0
     case Start => start()
     // our heartbeat timer expired: send heartbeats to maintain leadership

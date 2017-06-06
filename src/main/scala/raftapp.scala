@@ -23,6 +23,10 @@ object RaftApp extends App {
   raftTester ! CrashLeader
   Thread.sleep(electionTimeoutBase * 2)
 
+  // restart the leader as follower and watch it update its term as follower
+  raftTester ! RestartLeader
+  Thread.sleep(electionTimeoutBase * 2)
+
   // shutdown the raft servers, stop all actors
   raftTester ! Shutdown
 
