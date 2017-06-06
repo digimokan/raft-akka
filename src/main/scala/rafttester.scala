@@ -31,10 +31,10 @@ class RaftTester () extends Actor {
   )
 
   // send the list of servers to each server (introduces servers to each other)
-  serverIDs.map(_.ref).foreach( ref => ref ! InitWithPeers(serverIDs) )
+  serverIDs.foreach( id => id.ref ! InitWithPeers(serverIDs) )
 
-  def getName (inref:ActorRef) : String =
-    serverIDs.filter(_.ref == inref)(0).name
+  def getName (nameRef:ActorRef) : String =
+    serverIDs.filter(id => id.ref == nameRef)(0).name
 
   def shutdown () : Unit = {
     raftGroup ! Broadcast(PoisonPill)
@@ -81,8 +81,12 @@ class RaftTester () extends Actor {
         printf(f"${getName(sender)} [T${candTerm}]: received voteReply from ${getName(voterRef)}/T${voterTerm} (${voterDecision}), have ${yesVotes} yes votes\n")
       }
 
-    case AppendEntriesReplyMsg (term, success, leaderRef, leaderTerm) =>
-      printf(f"${getName(sender)} [T${term}]: received appendReq from ${getName(leaderRef)}/T${leaderTerm}\n")
+    // print control info for testing purposes
+    case AppendEntriesReqMsg (leaderTerm:Int, appenderRef:ActorRef) =>
+      printf(f"${getName(sender)} [T${leaderTerm}]: HT expired, sent empty appendReq to ${getName(appenderRef)}\n")
+
+    case AppendEntriesReplyMsg (appenderTerm, success, leaderRef, leaderTerm) =>
+      printf(f"${getName(sender)} [T${appenderTerm}]: received appendReq from ${getName(leaderRef)}/T${leaderTerm}\n")
 
     case AppendEntriesReceiptMsg (leaderTerm, becameFollower, appenderRef, appenderTerm) =>
       printf(f"${getName(sender)} [T${leaderTerm}]: received appendReply from ${getName(appenderRef)}/T${appenderTerm}\n")

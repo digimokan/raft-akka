@@ -65,6 +65,13 @@ class RaftServer (newName:String) extends Actor with Stash {
     tester ! VoteReceiptMsg(ownTerm, wonElection, becameFollower, yesVotes, voterRef, voterTerm, voterDecision)
   }
 
+  // send AppendEntries req to each appender
+  // tell tester we sent an AppendEntries req to each appender
+  def sendAppendEntriesReqMsg (appenderRef:ActorRef) : Unit = {
+    appenderRef ! AppendEntriesReq(ServerID(ownName, self), ownTerm)
+    tester ! AppendEntriesReqMsg(ownTerm, appenderRef)
+  }
+
   // send AppendEntries reply back to leader
   // tell tester we received an AppendEntries req from leader
   def sendAppendEntriesReplyMsg (success:Boolean, leaderRef:ActorRef, leaderTerm:Int) : Unit = {
@@ -129,6 +136,7 @@ class RaftServer (newName:String) extends Actor with Stash {
 
   // reset our election timer to base + optional variance
   def resetElectionTimer (useVariance:Boolean) : Double = {
+
     // set timer to its max possible value, or set to a base + some randomness
     val variance =
       if (useVariance)
@@ -136,11 +144,15 @@ class RaftServer (newName:String) extends Actor with Stash {
       else
         electionTimeoutBase
     val timerValue = electionTimeoutBase + variance
+
     // cancel the current running timer if it has been set, then start new one
     if (electionTimer != null)
       electionTimer.cancel()
     electionTimer = context.system.scheduler.scheduleOnce(timerValue milliseconds, self, ElectionTimeout)
+
+    // return the new timer value in seconds
     return (timerValue.toDouble / 1000)
+
   }
 
   // follower OR candidate received VoteReq from a candidate
@@ -174,7 +186,7 @@ class RaftServer (newName:String) extends Actor with Stash {
 
   }
 
-  // follower/candidate/leader received AppendEntriesReq from leader
+  // appender (follower/candidate/leader) received AppendEntriesReq from leader
   def processAppendEntriesReq (leaderId:ServerID, leaderTerm:Int) : Unit = {
 
     // placeholder for log checks
@@ -290,25 +302,23 @@ class RaftServer (newName:String) extends Actor with Stash {
     become(leader)
   }
 
-  // leader received AppendEntriesReply from follower/candidate/leader
-  def processAppendEntriesReply (id:ServerID, success:Boolean, term:Int) : Unit = {
+  // leader received AppendEntriesRepl from appender (follower/candidate/leader)
+  def processAppendEntriesReply (appenderId:ServerID, success:Boolean, appenderTerm:Int) : Unit = {
     // if follower/candidate/leader term > ownTerm, become follower
     val becameFollower =
-      if (term > ownTerm) {
-        changeToFollowerState(term)
+      if (appenderTerm > ownTerm) {
+        changeToFollowerState(appenderTerm)
         true
     } else false
 
     // send control msg to tester
-    sendAppendReceiptMsg(becameFollower, id.ref, term)
+    sendAppendReceiptMsg(becameFollower, appenderId.ref, appenderTerm)
   }
 
   // leader heartbeatTimeout received: send heartbeats to maintain leadership
   def broadcastHeartbeats () : Unit = {
-    // send heatbeat msg (empty AppendEntriesReq) to each peer
-    peers.foreach( id => id.ref ! AppendEntriesReq(ServerID(ownName, self), ownTerm) )
-    // print control info for testing purposes
-    printf(f"${ownName} [T${ownTerm}]: HT expired, broadcasting heartbeats\n")
+    // send empty AppendEntriesReq to each peer, send control msg to tester
+    peers.foreach( appenderId => sendAppendEntriesReqMsg(appenderId.ref) )
   }
 
   /*****************************************************************************
