@@ -112,7 +112,6 @@ class RaftTester () extends Actor {
     raftGroup ! Broadcast(Crash)
   }
 
-
   def crashLeader () : Unit = {
 
     println("\n****************************************************************************")

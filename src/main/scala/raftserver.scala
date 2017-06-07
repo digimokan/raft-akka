@@ -89,7 +89,6 @@ class RaftServer () extends Actor with Stash {
     tester ! VoteReqResendMsg(candRef, candTerm, voterRef)
   }
 
-
   // process received vote reply only if we are connected
   def receiveVoteReplyMsg (voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean) : Unit = {
     if (connected) processVoteReply(voterRef, voterTerm, voterDecision)
@@ -415,7 +414,7 @@ class RaftServer () extends Actor with Stash {
   def receive = {
     // init msg: add peers
     case InitWithPeers(peerList) => initialize(peerList)
-    // some other msg: stash the msg and handle it afer server inititialized
+    // some other msg: stash the msg and handle it after server inititialized
     case _ => stash()
   }
 
