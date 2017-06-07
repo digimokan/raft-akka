@@ -171,8 +171,9 @@ Since all raft servers start as followers, the crashed leader actually starts as
 a new follower in term 0.  Note that the remaining servers, which elected a new
 leader, are all running in term 1.  Since the new leader is sending out its
 heartbeats to maintain leadership, the new follower (i.e. crashed leader) will
-receive an AppendEntries RPC with term 1, which is greater than its own term of
-0.  The new follower will then update its term and become a follower in term 1.
+receive an AppendEntries RPC with term 1, which is greater than its own current
+term of 0.  The new follower will then update its term and become a follower
+in term 1.
 
 4. **Disconnect Current Leader.**  Send a "disconnect" command to the current
 leader.  The now-disconnected leader is still operating, but is unable to
