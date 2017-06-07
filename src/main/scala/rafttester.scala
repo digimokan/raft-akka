@@ -15,14 +15,14 @@ class RaftTester () extends Actor {
   // manage raft servers as name/ActorRef tuples
   case class ServerID (name:String, ref:ActorRef)
 
-  // servers that are leaders (should only be one...but invariant may occur)
+  // keep track of servers that are followers/candidates/leaders
+  var followers = Set[ServerID]()
+  var candidates = Set[ServerID]()
   var leaders = Set[ServerID]()
 
-  // servers that are followers
-  var followers = Set[ServerID]()
-
-  // leader that tester intentionally crashes
+  // leader that tester intentionally crashes/disconnects
   var crashedLeader:Option[ServerID] = None
+  var disconnectedLeader:Option[ServerID] = None
 
   // load constants from config file
   val electionTimeoutBase = ConfigFactory.load.getInt("election-timeout-base")
@@ -113,6 +113,39 @@ class RaftTester () extends Actor {
 
   }
 
+  def disconnectLeader () : Unit = {
+
+    println("\n****************************************************************************")
+    println("DISCONNECTING THE LEADER: OBSERVE A NEW ELECTION AND NEW LEADER HEARTBEATS")
+    println("****************************************************************************\n")
+
+    // CAUTION: tester still has two leaders in its leader list after disconnect
+    val leader = getLeader()
+    leader match {
+      case Some(ldr) =>
+        ldr.ref ! Disconnect
+        disconnectedLeader = Some(ldr)
+      case None =>
+        printf(f"\n>>>>>>>>>>>>>>>>>>>>>>>>>>> TESTER: NO LEADER TO DISCONNECT <<<<<<<<<<<<<<<<<<<<<<<<<<<\n\n")
+    }
+
+  }
+
+  def reconnectLeader () : Unit = {
+
+    println("\n*****************************************************************************")
+    println("RECONNECTING OLD LEADER: OBSERVE IT --REVERT-- TO FOLLOWER")
+    println("*****************************************************************************\n")
+
+    disconnectedLeader match {
+      case Some(ldr) =>
+        ldr.ref ! Reconnect
+      case None =>
+        printf(f"\n>>>>>>>>>>>>>>>>>>>>>>>>>>> TESTER: NO LEADER TO RECONNECT <<<<<<<<<<<<<<<<<<<<<<<<<<<\n\n")
+    }
+
+  }
+
   def shutdown () : Unit = {
     raftGroup ! Broadcast(PoisonPill)
 
@@ -138,6 +171,12 @@ class RaftTester () extends Actor {
     case RestartLeader =>
       restartLeader()
 
+    case DisconnectLeader =>
+      disconnectLeader()
+
+    case ReconnectLeader =>
+      reconnectLeader()
+
     case Shutdown =>
       shutdown()
 
@@ -147,14 +186,28 @@ class RaftTester () extends Actor {
     case StartupMsg(term, elecTimer) =>
       printf(f"${getName(sender)} [T${term}]: started from crashed state as follower, ET ${elecTimer}\n")
 
-    case FollowerMsg(followerRef, followerTerm) =>
-      followers += ServerID(getName(followerRef), followerRef)
+    case CrashMsg(ref, term) =>
+      followers -= ServerID(getName(ref), ref)
+      candidates -= ServerID(getName(ref), ref)
+      leaders -= ServerID(getName(ref), ref)
 
-    case CandidateMsg(candRef, candTerm) =>
-      printf(f"${getName(candRef)} [T${candTerm}]: ET expired, becoming candidate\n")
+    case FollowerMsg(ref, term) =>
+      followers += ServerID(getName(ref), ref)
+      candidates -= ServerID(getName(ref), ref)
+      leaders -= ServerID(getName(ref), ref)
 
-    case LeaderMsg(leaderRef, leaderTerm) =>
-      leaders += ServerID(getName(leaderRef), leaderRef)
+    case CandidateMsg(ref, term) =>
+      followers -= ServerID(getName(ref), ref)
+      candidates += ServerID(getName(ref), ref)
+      leaders -= ServerID(getName(ref), ref)
+
+    case LeaderMsg(ref, term) =>
+      followers -= ServerID(getName(ref), ref)
+      candidates -= ServerID(getName(ref), ref)
+      leaders += ServerID(getName(ref), ref)
+
+    case VoteReqMsg (candRef, candTerm, voterRef) =>
+      printf(f"${getName(candRef)} [T${candTerm}]: ET expired, sent VoteReq to ${getName(voterRef)}\n")
 
     case VoteReplyMsg (voterRef, voterTerm, voterDecision, candRef, candTerm) =>
       printf(f"${getName(voterRef)} [T${voterTerm}]: received VoteReq from ${getName(candRef)}/T${candTerm}, replied ${voterDecision}\n")

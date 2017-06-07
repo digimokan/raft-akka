@@ -27,6 +27,14 @@ object RaftApp extends App {
   raftTester ! RestartLeader
   Thread.sleep(electionTimeoutBase * 2)
 
+  // disconnect the leader and watch the remaining servers elect a leader
+  raftTester ! DisconnectLeader
+  Thread.sleep(electionTimeoutBase * 2)
+
+  // reconnect the leader and watch it revert to follower
+  raftTester ! ReconnectLeader
+  Thread.sleep(electionTimeoutBase * 2)
+
   // shutdown the raft servers, stop all actors
   raftTester ! Shutdown
 

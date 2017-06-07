@@ -11,6 +11,8 @@ final case class AppendReq (leaderRef:ActorRef, leaderTerm:Int) extends RaftAPI
 final case class AppendReply (appenderRef:ActorRef, appenderTerm:Int, appenderSuccess:Boolean) extends RaftAPI
 final case object Start extends RaftAPI
 final case object Crash extends RaftAPI
+final case object Disconnect extends RaftAPI
+final case object Reconnect extends RaftAPI
 final case object ElectionTimeout extends RaftAPI
 final case object HeartbeatTimeout extends RaftAPI
 
@@ -18,9 +20,11 @@ sealed trait RaftControlAPI
 
 final case object InitMsg extends RaftControlAPI
 final case class StartupMsg (term:Int, elecTimer:Double) extends RaftControlAPI
-final case class FollowerMsg (followerRef:ActorRef, followerTerm:Int) extends RaftControlAPI
-final case class CandidateMsg (candRef:ActorRef, candTerm:Int) extends RaftControlAPI
-final case class LeaderMsg (leaderRef:ActorRef, leaderTerm:Int) extends RaftControlAPI
+final case class CrashMsg (ref:ActorRef, term:Int) extends RaftControlAPI
+final case class FollowerMsg (ref:ActorRef, term:Int) extends RaftControlAPI
+final case class CandidateMsg (ref:ActorRef, term:Int) extends RaftControlAPI
+final case class LeaderMsg (ref:ActorRef, term:Int) extends RaftControlAPI
+final case class VoteReqMsg (candRef:ActorRef, candTerm:Int, voterRef:ActorRef) extends RaftControlAPI
 final case class VoteReplyMsg (voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean, candRef:ActorRef, candTerm:Int) extends RaftControlAPI
 final case class VoteReceiptMsg (candRef:ActorRef, candTerm:Int, wonElection:Boolean, becameFollower:Boolean, yesVotes:Int, voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean) extends RaftControlAPI
 final case class AppendReqMsg (leaderRef:ActorRef, leaderTerm:Int, appenderRef:ActorRef) extends RaftControlAPI
@@ -33,4 +37,6 @@ final case object Shutdown extends RaftTestAPI
 final case object StartAll extends RaftTestAPI
 final case object CrashLeader extends RaftTestAPI
 final case object RestartLeader extends RaftTestAPI
+final case object DisconnectLeader extends RaftTestAPI
+final case object ReconnectLeader extends RaftTestAPI
 
