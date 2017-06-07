@@ -91,6 +91,17 @@ class RaftTester () extends Actor {
     serverIDs.last.ref ! ElectionTimeout
   }
 
+  def startAllSimulElecContested () : Unit = {
+    println("\n****************************************************************************")
+    println("STARTING ALL SERVERS: OBSERVE SIMULATED SIMULTANEOUS --CONTESTED-- ELECTIONS")
+    println("  NOTE: THIS TEST MAY NOT ALWAYS BE CONTESTED, DEPENDING ON MSG TIMING")
+    println("****************************************************************************\n")
+
+    raftGroup ! Broadcast(Start)
+    serverIDs.take(serverIDs.size - 1).last.ref ! Crash
+    serverIDs.head.ref ! ElectionTimeout
+    serverIDs.last.ref ! ElectionTimeout
+  }
 
   def crashAll () : Unit = {
     println("\n****************************************************************************")
@@ -187,6 +198,9 @@ class RaftTester () extends Actor {
 
     case StartAllSimulElec =>
       startAllSimulElec()
+
+    case StartAllSimulElecContested =>
+      startAllSimulElecContested()
 
     case CrashAll =>
       crashAll()
