@@ -10,7 +10,7 @@ testing framework.
 - [Motivation / Design](#motivation--design)
 - [Installation](#installation)
   - [Windows](#windows)
-  - [macOS](#macOS)
+  - [macOS](#macos)
   - [Linux](#linux)
 - [Compiling And Running](#compiling-and-running)
 - [Architecture](#architecture)
