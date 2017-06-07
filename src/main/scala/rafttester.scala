@@ -94,7 +94,7 @@ class RaftTester () extends Actor {
   def startAllSimulElecContested () : Unit = {
     println("\n****************************************************************************")
     println("STARTING ALL SERVERS: OBSERVE SIMULATED SIMULTANEOUS --CONTESTED-- ELECTIONS")
-    println("  NOTE: THIS TEST MAY NOT ALWAYS BE CONTESTED, DEPENDING ON MSG TIMING")
+    println("--> NOTE: THIS TEST MAY NOT ALWAYS BE CONTESTED, DEPENDING ON MSG TIMING")
     println("****************************************************************************\n")
 
     raftGroup ! Broadcast(Start)

@@ -198,16 +198,11 @@ class RaftServer () extends Actor with Stash {
     connected = true
   }
 
-  // reset our election timer to base + optional variance
-  def resetElectionTimer (useVariance:Boolean) : Double = {
+  // reset our election timer to base value + some randomness
+  def resetElectionTimer () : Double = {
 
-    // set timer to its max possible value, or set to a base + some randomness
-    val variance =
-      if (useVariance)
-        rand.nextInt(electionTimeoutVariance)
-      else
-        electionTimeoutBase
-    val timerValue = electionTimeoutBase + variance
+    // set timer to its base value + some randomness
+    val timerValue = electionTimeoutBase + rand.nextInt(electionTimeoutVariance)
 
     // cancel the current running timer if it has been set, then start new one
     if (electionTimer != null)
@@ -261,14 +256,14 @@ class RaftServer () extends Actor with Stash {
       success = false
     // leaderTerm == ownTerm: follower simply replies to leader's req
     } else if (leaderTerm == ownTerm) {
-      // reset election timer, with variance
-      resetElectionTimer(true)
+      // reset election timer
+      resetElectionTimer()
       // placeholder for append operation
       success = true
     // leaderTerm > ownTerm: advance ownTerm, cand/lead becomes follower as nec
     } else {
-      // reset election timer, with variance
-      resetElectionTimer(true)
+      // reset election timer
+      resetElectionTimer()
       // follower advances term, or cand/lead advances term & becomes follower
       changeToFollowerState(leaderTerm)
       // placeholder for append operation
@@ -289,8 +284,8 @@ class RaftServer () extends Actor with Stash {
     ownTerm = newTerm
     // reset who we voted for this term
     votedFor = None
-    // reset election timer, with variance
-    val elecTimer = resetElectionTimer(true)
+    // reset election timer
+    val elecTimer = resetElectionTimer()
     // cancel the heartbeatTimer: follower does not need one
     if (heartbeatTimer != null)
       heartbeatTimer.cancel()
@@ -324,8 +319,8 @@ class RaftServer () extends Actor with Stash {
     ownTerm = newTerm
     startElection()
 
-    // reset our election timer MAX possible value, change "receive" behavior
-    resetElectionTimer(false)
+    // reset our election timer, change "receive" behavior
+    resetElectionTimer()
     become(candidate)
 
     // send control msg to tester
