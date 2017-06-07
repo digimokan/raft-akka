@@ -35,6 +35,14 @@ object RaftApp extends App {
   raftTester ! ReconnectLeader
   Thread.sleep(electionTimeoutBase * 2)
 
+  // crash all servers
+  raftTester ! CrashAll
+  Thread.sleep(electionTimeoutBase)
+
+  // start all the servers again and observe two simultaneous elections
+  raftTester ! StartAllSimulElec
+  Thread.sleep(electionTimeoutBase * 2)
+
   // shutdown the raft servers, stop all actors
   raftTester ! Shutdown
 

@@ -35,6 +35,8 @@ sealed trait RaftTestAPI
 
 final case object Shutdown extends RaftTestAPI
 final case object StartAll extends RaftTestAPI
+final case object StartAllSimulElec extends RaftTestAPI
+final case object CrashAll extends RaftTestAPI
 final case object CrashLeader extends RaftTestAPI
 final case object RestartLeader extends RaftTestAPI
 final case object DisconnectLeader extends RaftTestAPI

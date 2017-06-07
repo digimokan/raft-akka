@@ -81,6 +81,26 @@ class RaftTester () extends Actor {
     raftGroup ! Broadcast(Start)
   }
 
+  def startAllSimulElec () : Unit = {
+    println("\n****************************************************************************")
+    println("STARTING ALL SERVERS: OBSERVE SIMULATED SIMULTANEOUS ELECTIONS")
+    println("****************************************************************************\n")
+
+    raftGroup ! Broadcast(Start)
+    serverIDs.head.ref ! ElectionTimeout
+    serverIDs.last.ref ! ElectionTimeout
+  }
+
+
+  def crashAll () : Unit = {
+    println("\n****************************************************************************")
+    println("CRASHING ALL SERVERS: OBSERVE NO COMMUNICATION")
+    println("****************************************************************************\n")
+
+    raftGroup ! Broadcast(Crash)
+  }
+
+
   def crashLeader () : Unit = {
 
     println("\n****************************************************************************")
@@ -164,6 +184,12 @@ class RaftTester () extends Actor {
 
     case StartAll =>
       startAll()
+
+    case StartAllSimulElec =>
+      startAllSimulElec()
+
+    case CrashAll =>
+      crashAll()
 
     case CrashLeader =>
       crashLeader()
