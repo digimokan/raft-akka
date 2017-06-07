@@ -25,6 +25,7 @@ final case class FollowerMsg (ref:ActorRef, term:Int) extends RaftControlAPI
 final case class CandidateMsg (ref:ActorRef, term:Int) extends RaftControlAPI
 final case class LeaderMsg (ref:ActorRef, term:Int) extends RaftControlAPI
 final case class VoteReqMsg (candRef:ActorRef, candTerm:Int, voterRef:ActorRef) extends RaftControlAPI
+final case class VoteReqResendMsg (candRef:ActorRef, candTerm:Int, voterRef:ActorRef) extends RaftControlAPI
 final case class VoteReplyMsg (voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean, candRef:ActorRef, candTerm:Int) extends RaftControlAPI
 final case class VoteReceiptMsg (candRef:ActorRef, candTerm:Int, wonElection:Boolean, becameFollower:Boolean, yesVotes:Int, voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean) extends RaftControlAPI
 final case class AppendReqMsg (leaderRef:ActorRef, leaderTerm:Int, appenderRef:ActorRef) extends RaftControlAPI

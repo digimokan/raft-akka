@@ -95,6 +95,7 @@ class RaftTester () extends Actor {
     println("\n****************************************************************************")
     println("STARTING ALL SERVERS: OBSERVE SIMULATED SIMULTANEOUS --CONTESTED-- ELECTIONS")
     println("--> NOTE: THIS TEST MAY NOT ALWAYS BE CONTESTED, DEPENDING ON MSG TIMING")
+    println("--> NOTE: ALSO OBSERVE REPEATED VOTE REQS TO CRASHED SERVER FROM CANDIDATES")
     println("****************************************************************************\n")
 
     raftGroup ! Broadcast(Start)
@@ -248,6 +249,9 @@ class RaftTester () extends Actor {
 
     case VoteReqMsg (candRef, candTerm, voterRef) =>
       printf(f"${getName(candRef)} [T${candTerm}]: ET expired, sent VoteReq to ${getName(voterRef)}\n")
+
+    case VoteReqResendMsg (candRef, candTerm, voterRef) =>
+      printf(f"${getName(candRef)} [T${candTerm}]: HT expired, sent VoteReq to ${getName(voterRef)}\n")
 
     case VoteReplyMsg (voterRef, voterTerm, voterDecision, candRef, candTerm) =>
       printf(f"${getName(voterRef)} [T${voterTerm}]: received VoteReq from ${getName(candRef)}/T${candTerm}, replied ${voterDecision}\n")

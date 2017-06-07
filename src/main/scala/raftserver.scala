@@ -82,6 +82,14 @@ class RaftServer () extends Actor with Stash {
     tester ! VoteReqMsg(candRef, candTerm, voterRef)
   }
 
+  // resend vote req to unresponsive voter (simulate, if not connected)
+  // tell tester we sent a vote req to a candidate
+  def resendVoteReqMsg (candRef:ActorRef, candTerm:Int, voterRef:ActorRef) : Unit = {
+    if (connected) voterRef ! VoteReq(candRef, candTerm)
+    tester ! VoteReqResendMsg(candRef, candTerm, voterRef)
+  }
+
+
   // process received vote reply only if we are connected
   def receiveVoteReplyMsg (voterRef:ActorRef, voterTerm:Int, voterDecision:Boolean) : Unit = {
     if (connected) processVoteReply(voterRef, voterTerm, voterDecision)
@@ -168,10 +176,8 @@ class RaftServer () extends Actor with Stash {
     become(crashed)
     // erase all volatile state
     votesCollected.clear()
-    if (electionTimer != null)
-      electionTimer.cancel()
-    if (heartbeatTimer != null)
-      heartbeatTimer.cancel()
+    if (electionTimer != null) electionTimer.cancel()
+    if (heartbeatTimer != null) heartbeatTimer.cancel()
     // send control msg to tester
     sendCrashMsg()
   }
@@ -205,8 +211,7 @@ class RaftServer () extends Actor with Stash {
     val timerValue = electionTimeoutBase + rand.nextInt(electionTimeoutVariance)
 
     // cancel the current running timer if it has been set, then start new one
-    if (electionTimer != null)
-      electionTimer.cancel()
+    if (electionTimer != null) electionTimer.cancel()
     electionTimer = context.system.scheduler.scheduleOnce(timerValue milliseconds, self, ElectionTimeout)
 
     // return the new timer value in seconds
@@ -287,8 +292,7 @@ class RaftServer () extends Actor with Stash {
     // reset election timer
     val elecTimer = resetElectionTimer()
     // cancel the heartbeatTimer: follower does not need one
-    if (heartbeatTimer != null)
-      heartbeatTimer.cancel()
+    if (heartbeatTimer != null) heartbeatTimer.cancel()
     // change message processing "receive" behavior
     become(follower)
     // send control msg to tester
@@ -323,6 +327,10 @@ class RaftServer () extends Actor with Stash {
     resetElectionTimer()
     become(candidate)
 
+    // set heartbeat timer (to keep requesting votes from unresponsive voters)
+    if (heartbeatTimer != null) heartbeatTimer.cancel()
+    heartbeatTimer = context.system.scheduler.schedule(heartbeatTimeout milliseconds, heartbeatTimeout milliseconds, self, HeartbeatTimeout)
+
     // send control msg to tester
     sendCandidateMsg()
 
@@ -354,17 +362,23 @@ class RaftServer () extends Actor with Stash {
 
   }
 
+  // candidate HB timeout received: resend vote reqs to unresponsive voters
+  def resendVoteReqs () : Unit = {
+    // determine which voters have not replied to our vote requests
+    val nonVoters = peers -- votesCollected.map(vote => vote.ref)
+    // send vote req to each nonvoting peer, send control msgs to tester
+    nonVoters.foreach( nonVoterRef => resendVoteReqMsg(self, ownTerm, nonVoterRef) )
+  }
+
   /*****************************************************************************
   * LEADER LOGICS: ATOMIC UNITS FOR LEADER STATE
   *****************************************************************************/
 
   def changeToLeaderState () : Unit = {
     // cancel the electionTimer: leader does not need one
-    if (electionTimer != null)
-      electionTimer.cancel()
+    if (electionTimer != null) electionTimer.cancel()
     // do heartbeat broadcast now, and repeat the heartbeats at intervals
-    if (heartbeatTimer != null)
-      heartbeatTimer.cancel()
+    if (heartbeatTimer != null) heartbeatTimer.cancel()
     heartbeatTimer = context.system.scheduler.schedule(0 milliseconds, heartbeatTimeout milliseconds, self, HeartbeatTimeout)
     // change message processing "receive" behavior
     become(leader)
@@ -388,7 +402,7 @@ class RaftServer () extends Actor with Stash {
   }
 
   // leader heartbeatTimeout received: send heartbeats to maintain leadership
-  def broadcastHeartbeats () : Unit = {
+  def broadcastLeaderHeartbeats () : Unit = {
     // send empty append req to each peer, send control msgs to tester
     peers.foreach( appenderRef => sendAppendReqMsg(self, ownTerm, appenderRef) )
   }
@@ -441,6 +455,8 @@ class RaftServer () extends Actor with Stash {
     case Reconnect => reconnect()
     // election timer expired without collecting majority: start a NEW election
     case ElectionTimeout => changeToCandidateState(ownTerm + 1)
+    // our heartbeat timer expired: resend vote requests to unresponsive voters
+    case HeartbeatTimeout => resendVoteReqs()
     // received a reply to a vote request sent by us
     case VoteReply(voterRef, voterTerm, voterDecision) => receiveVoteReplyMsg(voterRef, voterTerm, voterDecision)
     // received VoteReq from another candidate holding SIMULTANEOUS election
@@ -460,7 +476,7 @@ class RaftServer () extends Actor with Stash {
     // reconnect server: now able to send/receive msgs
     case Reconnect => reconnect()
     // our heartbeat timer expired: send heartbeats to maintain leadership
-    case HeartbeatTimeout => broadcastHeartbeats()
+    case HeartbeatTimeout => broadcastLeaderHeartbeats()
     // received AppendReq from a leader server in later term
     case AppendReq(leaderRef, leaderTerm) => receiveAppendReqMsg(leaderRef, leaderTerm)
     // received AppendReply from an appender (follower/candidate/leader)
